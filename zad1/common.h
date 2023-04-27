@@ -54,8 +54,8 @@ inline static struct sockaddr_in get_address(char *host, uint16_t port) {
     struct addrinfo hints;
     memset(&hints, 0, sizeof(struct addrinfo));
     hints.ai_family = AF_INET; // IPv4
-    hints.ai_socktype = SOCK_STREAM;
-    hints.ai_protocol = IPPROTO_TCP;
+    hints.ai_socktype = SOCK_DGRAM;
+    hints.ai_protocol = IPPROTO_UDP;
 
     struct addrinfo *address_result;
     CHECK(getaddrinfo(host, NULL, &hints, &address_result));
