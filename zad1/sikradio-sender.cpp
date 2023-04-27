@@ -1,6 +1,7 @@
 #include <cstdint>
 #include <string>
 #include <iostream>
+#include <stdexcept>
 #include <boost/program_options.hpp>
 #include "common.h"
 
@@ -39,7 +40,15 @@ void get_options(const int ac, char* av[]) {
             ;
 
     po::variables_map vm;
-    po::store(po::parse_command_line(ac, av, desc), vm);
+    try {
+        po::store(po::parse_command_line(ac, av, desc), vm);
+        std::cout << vm.count("receiver-address") << " " << vm.count("port") << " " << vm.count("package-size") << " " << vm.count("name") << "\n";
+        if (!vm.count("receiver-address"))
+            throw std::runtime_error("Specifying receiver's address with -a option is required");
+    } catch (std::exception& e) { // TODO: if this code repeats, make a new function
+        std::cerr << "Error: bad program call\n\t" << e.what() << "\n";
+        exit(1);
+    }
     po::notify(vm);
 
     if (vm.count("help")) {
@@ -73,5 +82,5 @@ void send_music() {
 
 int main(int argc, char* argv[]) {
     get_options(argc, argv);
-    return 0;
+    send_music();
 }
