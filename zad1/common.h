@@ -116,9 +116,11 @@ inline static void connect_socket(int socket_fd, const struct sockaddr_in *addre
     CHECK_ERRNO(connect(socket_fd, (struct sockaddr *) address, sizeof(*address)));
 }
 
-inline static void send_message(int socket_fd, const void *message, size_t length, int flags) {
+inline static void send_message_to(int socket_fd, const struct sockaddr_in *send_address, const void *message, size_t length) {
+    auto address_length = (socklen_t) sizeof(*send_address);
     errno = 0;
-    ssize_t sent_length = send(socket_fd, message, length, flags);
+    ssize_t sent_length = sendto(socket_fd, message, length, NO_FLAGS,
+                                 (struct sockaddr *) send_address, address_length);
     if (sent_length < 0) {
         PRINT_ERRNO();
     }
