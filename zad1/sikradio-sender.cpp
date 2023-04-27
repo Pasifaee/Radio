@@ -9,13 +9,14 @@
 //  - jak czytać dane z stdin? std::cin?
 
 // Types.
-#define addr_t uint16_t
+#define addr_t std::string
 #define port_t uint16_t
 
 // Default values.
 #define DFLT_PORT 27924
 #define DFLT_PSIZE 512
 #define DFLT_NAME "Nienazwany nadajnik"
+#define NO_FLAGS 0
 
 // Constants. TODO: wybrać dobre typy
 addr_t DEST_ADDR; // IPv4 receiver's address.
@@ -47,10 +48,27 @@ void get_options(const int ac, char* av[]) {
     }
 }
 
-// Reads data from stdin and sends them via UDP to DEST_ADDR on port DATA_PORT. It sends
-// the data in packages of size PSIZE.
-void send_data() {
+/**
+ * Reads data from stdin.
+ */
+void get_music() {
 
+}
+
+/**
+ * Sends data via UDP to DEST_ADDR on port DATA_PORT. It sends
+ * the data in packages of size PSIZE.
+ */
+void send_music() {
+    struct sockaddr_in send_address = get_address(DEST_ADDR.data(), DATA_PORT);
+
+    int socket_fd = socket(PF_INET, SOCK_DGRAM, 0);
+    if (socket_fd < 0) {
+        PRINT_ERRNO();
+    }
+
+    std::string message = "Oto jest wiadomość. Dłuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuga";
+    send_message_to(socket_fd, &send_address, message.c_str(), message.length());
 }
 
 int main(int argc, char* argv[]) {
