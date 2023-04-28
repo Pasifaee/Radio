@@ -154,8 +154,7 @@ inline static size_t receive_message_from(int socket_fd, addr_t client_address, 
         errno = 0;
         received_length = recvfrom(socket_fd, buffer, max_length, NO_FLAGS,
                                            (struct sockaddr *) &incoming_address, &address_length);
-        std::cout << "Received message: " << (char *) buffer << " from addr=" << incoming_address.sin_addr.s_addr << "\n";
-    } while (!addr_cmp(client_address_ext, incoming_address));
+    } while (client_address_ext.sin_addr.s_addr != incoming_address.sin_addr.s_addr); // TODO: przetestować czy z innych adresów nie przychodzi
     if (received_length < 0)
         PRINT_ERRNO();
 
