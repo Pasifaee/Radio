@@ -1,7 +1,5 @@
 #include <cstdint>
 #include <string>
-#include <iostream>
-#include <stdexcept>
 #include <boost/program_options.hpp>
 #include "net_utils.h"
 #include "utils.h"
@@ -17,7 +15,7 @@ size_t BSIZE; // Buffer size.
 void get_music() {
     printf("Listening on port %u\n", DATA_PORT);
 
-    std::byte buffer[BSIZE];
+    byte_t buffer[BSIZE];
     int socket_fd = socket(PF_INET, SOCK_DGRAM, 0);
     if (socket_fd < 0)
         PRINT_ERRNO();

@@ -10,12 +10,14 @@
 #include <stdint.h>
 #include <arpa/inet.h>
 #include <signal.h>
+#include <iostream>
 
 #include "err.h"
 
 // Types.
 #define addr_t std::string
 #define port_t uint16_t
+#define byte_t uint8_t
 
 // Constants.
 #define NO_FLAGS 0
@@ -121,10 +123,10 @@ inline static void connect_socket(int socket_fd, const struct sockaddr_in *addre
     CHECK_ERRNO(connect(socket_fd, (struct sockaddr *) address, sizeof(*address)));
 }
 
-inline static void send_message_to(int socket_fd, const struct sockaddr_in *send_address, const void *message, size_t length) {
+inline static void send_data_to(int socket_fd, const struct sockaddr_in *send_address, const void *data, size_t length) {
     auto address_length = (socklen_t) sizeof(*send_address);
     errno = 0;
-    ssize_t sent_length = sendto(socket_fd, message, length, NO_FLAGS,
+    ssize_t sent_length = sendto(socket_fd, data, length, NO_FLAGS,
                                  (struct sockaddr *) send_address, address_length);
     if (sent_length < 0) {
         PRINT_ERRNO();

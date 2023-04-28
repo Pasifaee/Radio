@@ -1,8 +1,6 @@
 #include <cstdint>
 #include <string>
-#include <iostream>
-#include <stdexcept>
-#include <boost/program_options.hpp>
+#include <unistd.h>
 #include "net_utils.h"
 #include "utils.h"
 
@@ -19,28 +17,36 @@ std::string NAME; // Sender's name.
 /**
  * Reads data from stdin.
  */
-void get_music() {
-
+ssize_t read_music(byte_t* buff) {
+    ssize_t bytes_read = read(STDIN_FILENO, buff, PSIZE);
+    if (bytes_read < 0)
+        PRINT_ERRNO();
+    return bytes_read;
 }
 
 /**
  * Sends data via UDP to DEST_ADDR on port DATA_PORT. It sends
  * the data in packages of size PSIZE.
  */
-void send_music() {
+void read_and_send_music() {
     struct sockaddr_in send_address = get_address(DEST_ADDR.data(), DATA_PORT);
 
     int socket_fd = socket(PF_INET, SOCK_DGRAM, 0);
     if (socket_fd < 0)
         PRINT_ERRNO();
 
-    std::string message = "Oto jest wiadomość. Dłuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuga";
-    send_message_to(socket_fd, &send_address, message.c_str(), message.length());
+    byte_t buffer[PSIZE];
+    while (true) {
+        ssize_t bytes_read = read_music(buffer);
+        if ((size_t) bytes_read < PSIZE)
+            break;
+        send_data_to(socket_fd, &send_address, buffer, PSIZE);
+    }
 
     CHECK_ERRNO(close(socket_fd));
 }
 
 int main(int argc, char* argv[]) {
     get_options(true, argc, argv, &DEST_ADDR, &DATA_PORT, nullptr, &PSIZE, &NAME);
-    send_music();
+    read_and_send_music();
 }
