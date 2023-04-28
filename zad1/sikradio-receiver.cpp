@@ -23,8 +23,10 @@ void get_music() {
 
     size_t read_length;
     do {
-        read_length = receive_message_from(socket_fd, SRC_ADDR, &buffer, sizeof(buffer)); // TODO: what should max_length be equal to?
-        printf("received %zd bytes from sender: '%.*s'\n", read_length, (int) read_length, (char *) buffer); // note: we specify the length of the printed string
+        read_length = receive_data_from(socket_fd, SRC_ADDR, &buffer, sizeof(buffer)); // TODO: what should max_length be equal to?
+        printf("received %zd bytes from sender\n", read_length); // note: we specify the length of the printed string
+        print_bytes(buffer, read_length, (char *) "Bytes:");
+        std::cout << "\n";
     } while (read_length > 0);
 
     CHECK_ERRNO(close(socket_fd));

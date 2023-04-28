@@ -142,15 +142,13 @@ inline static bool addr_cmp(sockaddr_in addr1, sockaddr_in addr2) {
  * Listens for a message from specified address. While listening, discards all the messages coming from
  * any address that is different than the specified.
  */
-inline static size_t receive_message_from(int socket_fd, addr_t client_address, void *buffer, size_t max_length) {
-    std::cout << "Client address=" << client_address << "\n";
+inline static size_t receive_data_from(int socket_fd, addr_t client_address, void *buffer, size_t max_length) {
     struct sockaddr_in client_address_ext = get_address(client_address.data(), 0);
     struct sockaddr_in incoming_address;
     auto address_length = (socklen_t) sizeof(incoming_address);
 
     ssize_t received_length;
     do {
-        std::cout << "Waiting for a message...\n";
         errno = 0;
         received_length = recvfrom(socket_fd, buffer, max_length, NO_FLAGS,
                                            (struct sockaddr *) &incoming_address, &address_length);

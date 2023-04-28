@@ -30,4 +30,13 @@
  */
 void get_options(bool sender, int ac, char* av[], addr_t* address, port_t* port, size_t* bsize, size_t* psize = nullptr, std::string* name = nullptr);
 
+inline void print_bytes(byte_t* bytes, size_t n, char* message = nullptr) {
+    for (size_t i = 0; i < n; i++) {
+        if (message)
+            std::cout << message << "\n";
+        std::cout << std::hex << (unsigned int) bytes[i] << " ";
+    }
+    std::cout << "\n";
+}
+
 #endif //MIMUW_SIK_ZAD1_UTILS_H
