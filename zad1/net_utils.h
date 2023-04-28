@@ -137,7 +137,7 @@ inline static size_t receive_message(int socket_fd, void *buffer, size_t max_len
     ssize_t received_length = recv(socket_fd, buffer, max_length, flags);
     if (received_length < 0) {
         PRINT_ERRNO();
-    }
+
     return (size_t) received_length;
 }
 
