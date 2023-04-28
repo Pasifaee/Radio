@@ -3,59 +3,18 @@
 #include <iostream>
 #include <stdexcept>
 #include <boost/program_options.hpp>
-#include "common.h"
+#include "net_utils.h"
+#include "utils.h"
 
 // TODO:
 //  - pamiętaj o zmienianiu kolejności bajtów
 //  - jak czytać dane z stdin? std::cin?
 
-// Types.
-#define addr_t std::string
-#define port_t uint16_t
-
-// Default values.
-#define DFLT_PORT 27924
-#define DFLT_PSIZE 512
-#define DFLT_NAME "Nienazwany nadajnik"
-#define NO_FLAGS 0
-
-// Constants. TODO: wybrać dobre typy
+// Program arguments.
 addr_t DEST_ADDR; // IPv4 receiver's address.
-port_t DATA_PORT;
+port_t DATA_PORT; // Receiver's port.
 size_t PSIZE; // Package size.
 std::string NAME; // Sender's name.
-
-namespace po = boost::program_options;
-
-// Set program constants by parsing command line.
-void get_options(const int ac, char* av[]) {
-    // Declare the supported options.
-    po::options_description desc("Allowed options");
-    desc.add_options()
-            ("help", "produce help message")
-            ("receiver-address,a", po::value<addr_t>(&DEST_ADDR), "specify receiver address")
-            ("port,P", po::value<port_t>(&DATA_PORT)->default_value(DFLT_PORT), "set receiver's port for communication") // TODO: receiver;s or sender's port?
-            ("package-size,p", po::value<size_t>(&PSIZE)->default_value(DFLT_PSIZE), "set package size")
-            ("name,n", po::value<std::string>(&NAME)->default_value(DFLT_NAME), "set the name of the sender")
-            ;
-
-    po::variables_map vm;
-    try {
-        po::store(po::parse_command_line(ac, av, desc), vm);
-        std::cout << vm.count("receiver-address") << " " << vm.count("port") << " " << vm.count("package-size") << " " << vm.count("name") << "\n";
-        if (!vm.count("receiver-address"))
-            throw std::runtime_error("Specifying receiver's address with -a option is required");
-    } catch (std::exception& e) { // TODO: if this code repeats, make a new function
-        std::cerr << "Error: bad program call\n\t" << e.what() << "\n";
-        exit(1);
-    }
-    po::notify(vm);
-
-    if (vm.count("help")) {
-        std::cout << desc << "\n";
-        exit(0); // TODO: is this the right exit code? can i do my own quirks like this?
-    }
-}
 
 /**
  * Reads data from stdin.
@@ -72,15 +31,16 @@ void send_music() {
     struct sockaddr_in send_address = get_address(DEST_ADDR.data(), DATA_PORT);
 
     int socket_fd = socket(PF_INET, SOCK_DGRAM, 0);
-    if (socket_fd < 0) {
+    if (socket_fd < 0)
         PRINT_ERRNO();
-    }
 
     std::string message = "Oto jest wiadomość. Dłuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuga";
     send_message_to(socket_fd, &send_address, message.c_str(), message.length());
+
+    CHECK_ERRNO(close(socket_fd));
 }
 
 int main(int argc, char* argv[]) {
-    get_options(argc, argv);
+    get_options(true, argc, argv, &DEST_ADDR, &DATA_PORT, nullptr, &PSIZE, &NAME);
     send_music();
 }

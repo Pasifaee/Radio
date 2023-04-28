@@ -13,6 +13,11 @@
 
 #include "err.h"
 
+// Types.
+#define addr_t std::string
+#define port_t uint16_t
+
+// Constants.
 #define NO_FLAGS 0
 
 inline static uint16_t read_port(char *string) {
