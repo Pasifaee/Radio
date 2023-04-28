@@ -132,10 +132,29 @@ inline static void send_message_to(int socket_fd, const struct sockaddr_in *send
     ENSURE(sent_length == (ssize_t) length);
 }
 
-inline static size_t receive_message(int socket_fd, void *buffer, size_t max_length, int flags) {
-    errno = 0;
-    ssize_t received_length = recv(socket_fd, buffer, max_length, flags);
-    if (received_length < 0) {
+inline static bool addr_cmp(sockaddr_in addr1, sockaddr_in addr2) {
+    return addr1.sin_port == addr2.sin_port && addr1.sin_addr.s_addr == addr2.sin_addr.s_addr;
+}
+
+/**
+ * Listens for a message from specified address. While listening, discards all the messages coming from
+ * any address that is different than the specified.
+ */
+inline static size_t receive_message_from(int socket_fd, addr_t client_address, void *buffer, size_t max_length) {
+    std::cout << "Client address=" << client_address << "\n";
+    struct sockaddr_in client_address_ext = get_address(client_address.data(), 0);
+    struct sockaddr_in incoming_address;
+    auto address_length = (socklen_t) sizeof(incoming_address);
+
+    ssize_t received_length;
+    do {
+        std::cout << "Waiting for a message...\n";
+        errno = 0;
+        received_length = recvfrom(socket_fd, buffer, max_length, NO_FLAGS,
+                                           (struct sockaddr *) &incoming_address, &address_length);
+        std::cout << "Received message: " << (char *) buffer << " from addr=" << incoming_address.sin_addr.s_addr << "\n";
+    } while (!addr_cmp(client_address_ext, incoming_address));
+    if (received_length < 0)
         PRINT_ERRNO();
 
     return (size_t) received_length;
