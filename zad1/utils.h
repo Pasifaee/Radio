@@ -17,6 +17,14 @@
 // Constants.
 #define NO_FLAGS 0
 
+struct audio_pack {
+    uint64_t session_id;
+    uint64_t first_byte_num;
+    byte_t* audio_data;
+
+    size_t package_size;
+};
+
 /**
  * TODO
  */

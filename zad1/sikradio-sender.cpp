@@ -45,7 +45,7 @@ ssize_t fill_audio_datagram(byte_t* datagram, uint64_t session_id, uint64_t firs
 
 /**
  * Sends data via UDP to DEST_ADDR on port DATA_PORT. It sends
- * the data in packages of size PSIZE.
+ * the data in packages of size package_size.
  */
 void read_and_send_music() {
     struct sockaddr_in send_address = get_address(DEST_ADDR.data(), DATA_PORT);

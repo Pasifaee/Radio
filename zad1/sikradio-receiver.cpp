@@ -14,34 +14,19 @@ size_t BSIZE; // Buffer size.
 
 static uint64_t last_session_id = 0;
 static uint64_t byte0;
+static bool playing = false;
 
-/**
- * Get data from the music sender.
- */
-void get_music() {
-    std::cout << "Listening on port " << DATA_PORT << "\n";
-
-    byte_t buffer[BSIZE];
-    int socket_fd = socket(PF_INET, SOCK_DGRAM, 0);
-    if (socket_fd < 0)
-        PRINT_ERRNO();
-    bind_socket(socket_fd, DATA_PORT);
-
-    size_t read_length;
-    do {
-        read_length = receive_data_from(socket_fd, SRC_ADDR, &buffer, BSIZE); // TODO: what should max_length be equal to?
-        printf("received %zd bytes from sender\n", read_length); // note: we specify the length of the printed string
-        print_bytes(buffer, read_length, (char *) "Bytes:");
-        std::cout << "\n";
-    } while (read_length > 0);
-
-    CHECK_ERRNO(close(socket_fd));
-}
-
-void read_datagram(const byte_t* datagram, uint64_t* session_id, uint64_t* first_byte_num, byte_t* data, size_t package_size) {
+audio_pack read_datagram(const byte_t* datagram, uint64_t* session_id, uint64_t* first_byte_num, byte_t* data, size_t package_size) {
     memcpy(session_id, datagram, 8);
     memcpy(first_byte_num, datagram + 8, 8);
     memcpy(data, datagram + 16, package_size - 16);
+
+    audio_pack package{};
+    package.session_id = *session_id;
+    package.first_byte_num = *first_byte_num;
+    package.audio_data = data; // TODO: is this safe?
+    package.package_size = package_size;
+    return package;
 }
 
 void init_connection(struct pollfd* poll_desc) {
@@ -69,25 +54,33 @@ ssize_t receive_new_package(int socket_fd, byte_t* start_buffer) {
     return package_size;
 }
 
-void handle_new_package(size_t package_size, const byte_t* start_buffer) {
+void new_audio_session(audio_pack start_package, byte_t* buffer) {
+    last_session_id = start_package.session_id;
+    byte0 = start_package.first_byte_num;
+    memset(buffer, 0, BSIZE); // Cleaning the buffer.
+}
+
+void write_package_to_buffer(const byte_t* datagram, byte_t* buffer) {
+
+}
+
+void handle_new_package(size_t package_size, const byte_t* datagram, byte_t* buffer) {
     uint64_t session_id, first_byte_num;
     byte_t data[package_size - 16];
-    read_datagram(start_buffer, &session_id, &first_byte_num, data, package_size);
+    audio_pack package = read_datagram(datagram, &session_id, &first_byte_num, data, package_size);
     // if (session_id < last_session_id) ignore;
     if (session_id > last_session_id) { // New session.
-        last_session_id = session_id;
-        byte0 = first_byte_num;
+        new_audio_session(package, buffer);
     }
     if (session_id >= last_session_id) {
-        // TODO new function?
+        write_package_to_buffer();
     }
 }
 
-
 /**
- * Send data to stdout.
+ * TODO
  */
-void play_music() {
+void receive_and_play_music() {
     byte_t start_buffer[BSIZE + 1];
     byte_t buffer[BSIZE];
     bool missing[BSIZE];
@@ -106,17 +99,18 @@ void play_music() {
                 PRINT_ERRNO();
         } else {
             if (poll_desc->revents & POLL_IN) {
-                // TODO Handle new package
                 ssize_t package_size = receive_new_package(poll_desc->fd, start_buffer);
                 if (package_size > 0 && (size_t) package_size <= BSIZE) {
-
+                    handle_new_package(package_size, start_buffer, buffer);
                 }
             }
         }
     } while (true); // TODO
+
+    CHECK_ERRNO(close(poll_desc->fd));
 }
 
 int main(int argc, char* argv[]) {
     get_options(false, argc, argv, &SRC_ADDR, &DATA_PORT, &BSIZE);
-    get_music();
+    // ...
 }
