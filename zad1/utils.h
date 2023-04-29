@@ -19,14 +19,6 @@
 
 /**
  * TODO
- * @param sender
- * @param ac
- * @param av
- * @param address
- * @param port
- * @param bsize
- * @param psize
- * @param name
  */
 void get_options(bool sender, int ac, char* av[], addr_t* address, port_t* port, size_t* bsize, size_t* psize = nullptr, std::string* name = nullptr);
 

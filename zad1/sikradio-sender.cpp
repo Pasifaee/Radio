@@ -67,8 +67,8 @@ void read_and_send_music() {
         print_bytes(datagram + 8, 8);
         print_bytes(datagram + 16, PSIZE);
         std::cout << "\n\n";
-        send_data_to(socket_fd, &send_address, datagram, PSIZE + 16);
 
+        send_data_to(socket_fd, &send_address, datagram, PSIZE + 16);
         first_byte_num += bytes_read;
     }
 
