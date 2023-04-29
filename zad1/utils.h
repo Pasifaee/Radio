@@ -22,7 +22,7 @@ struct audio_pack {
     uint64_t first_byte_num;
     byte_t* audio_data;
 
-    size_t package_size;
+    size_t PSIZE; // Size of audio_data.
 };
 
 /**

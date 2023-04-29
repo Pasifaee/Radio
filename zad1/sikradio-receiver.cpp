@@ -16,6 +16,10 @@ static uint64_t last_session_id = 0;
 static uint64_t byte0;
 static bool playing = false;
 
+// Important: ordering from byte0! (byte0 <-> 0)
+uint64_t play_byte; // Number of the package that's gonna be transmitted to stdout next.
+uint64_t write_byte; // Number of the last written package + 1.
+
 audio_pack read_datagram(const byte_t* datagram, uint64_t* session_id, uint64_t* first_byte_num, byte_t* data, size_t package_size) {
     memcpy(session_id, datagram, 8);
     memcpy(first_byte_num, datagram + 8, 8);
@@ -25,7 +29,7 @@ audio_pack read_datagram(const byte_t* datagram, uint64_t* session_id, uint64_t*
     package.session_id = *session_id;
     package.first_byte_num = *first_byte_num;
     package.audio_data = data; // TODO: is this safe?
-    package.package_size = package_size;
+    package.PSIZE = package_size - 16;
     return package;
 }
 
@@ -55,13 +59,47 @@ ssize_t receive_new_package(int socket_fd, byte_t* start_buffer) {
 }
 
 void new_audio_session(audio_pack start_package, byte_t* buffer) {
+    play_byte = 0;
+    write_byte = 0;
+
     last_session_id = start_package.session_id;
     byte0 = start_package.first_byte_num;
     memset(buffer, 0, BSIZE); // Cleaning the buffer.
 }
 
-void write_package_to_buffer(const byte_t* datagram, byte_t* buffer) {
+// TODO: here look for be potential errors!! Most bug-prone part of the code I think!!
+// TODO: test this
+void write_package_to_buffer(const audio_pack package, byte_t* buffer) {
+    assert(package.first_byte_num % package.PSIZE == 0);
+    size_t eff_buffer_size = BSIZE - BSIZE % package.PSIZE;
+    if (package.first_byte_num >= write_byte - eff_buffer_size
+        && package.first_byte_num < write_byte) { // Buffer's cycle boundary (write_byte) doesn't move and package is simply written in the appropriate place .
+        // Copy audio_data from package to buffer.
+        memcpy(buffer + (package.first_byte_num % eff_buffer_size), package.audio_data, package.PSIZE);
+    } else if (package.first_byte_num >= write_byte) { // Buffer's cycle boundary needs to move.
+        uint64_t new_write_byte = package.first_byte_num + package.PSIZE;
+        // What we clean depends on how much the cycle boundary (write_byte) moved.
+        if (new_write_byte - write_byte < eff_buffer_size) {
+            if (new_write_byte % eff_buffer_size > write_byte % eff_buffer_size) {
+                // Clean a part of the buffer to the right of the write_byte.
+                memset(buffer + write_byte, 0, new_write_byte - write_byte);
+            } else {
+                // Clean the buffer to the right of the write_byte and a part in the beginning.
+                memset(buffer + write_byte, 0, eff_buffer_size - write_byte);
+            }
+        } else {
+            // Clean the whole buffer.
+            memset(buffer, 0, eff_buffer_size);
+        }
 
+        // Copy audio_data from package to buffer.
+        memcpy(buffer + (package.first_byte_num % eff_buffer_size), package.audio_data, package.PSIZE);
+
+        // Update 'pointers'.
+        play_byte = std::max(play_byte, new_write_byte - eff_buffer_size);
+        write_byte = new_write_byte;
+    }
+    // If the incoming package is 'older' than the oldest currently in the buffer, we ignore it.
 }
 
 void handle_new_package(size_t package_size, const byte_t* datagram, byte_t* buffer) {
@@ -83,7 +121,7 @@ void handle_new_package(size_t package_size, const byte_t* datagram, byte_t* buf
 void receive_and_play_music() {
     byte_t start_buffer[BSIZE + 1];
     byte_t buffer[BSIZE];
-    bool missing[BSIZE];
+    bool missing[BSIZE]; // TODO: change to a set?
 
     struct pollfd* poll_desc;
     init_connection(poll_desc);
