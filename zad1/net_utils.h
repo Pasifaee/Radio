@@ -142,21 +142,20 @@ inline static bool addr_cmp(sockaddr_in addr1, sockaddr_in addr2) {
  * Listens for a message from specified address. While listening, discards all the messages coming from
  * any address that is different than the specified.
  */
-inline static size_t receive_data_from(int socket_fd, addr_t client_address, void *buffer, size_t max_length) {
-    struct sockaddr_in client_address_ext = get_address(client_address.data(), 0);
-    struct sockaddr_in incoming_address;
-    auto address_length = (socklen_t) sizeof(incoming_address);
+inline static ssize_t receive_data_from(int socket_fd, struct sockaddr_in *client_address, void *buffer, size_t max_length) {
+    // struct sockaddr_in client_address_ext = get_address(client_address.data(), 0);
+    // struct sockaddr_in incoming_address;
+    auto address_length = (socklen_t) sizeof(client_address);
 
     ssize_t received_length;
-    do {
-        errno = 0;
-        received_length = recvfrom(socket_fd, buffer, max_length, NO_FLAGS,
-                                           (struct sockaddr *) &incoming_address, &address_length);
-    } while (client_address_ext.sin_addr.s_addr != incoming_address.sin_addr.s_addr); // TODO: przetestować czy z innych adresów nie przychodzi
+    errno = 0;
+    received_length = recvfrom(socket_fd, buffer, max_length, NO_FLAGS,
+                               (struct sockaddr *) client_address, &address_length);
+    // while (client_address_ext.sin_addr.s_addr != incoming_address.sin_addr.s_addr);
     if (received_length < 0)
         PRINT_ERRNO();
 
-    return (size_t) received_length;
+    return received_length;
 }
 
 inline static void install_signal_handler(int signal, void (*handler)(int)) {
