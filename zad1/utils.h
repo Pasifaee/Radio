@@ -21,8 +21,6 @@ struct audio_pack {
     uint64_t session_id;
     uint64_t first_byte_num;
     byte_t* audio_data;
-
-    size_t PSIZE; // Size of audio_data.
 };
 
 /**
@@ -30,7 +28,7 @@ struct audio_pack {
  */
 void get_options(bool sender, int ac, char* av[], addr_t* address, port_t* port, size_t* bsize, size_t* psize = nullptr, std::string* name = nullptr);
 
-inline void print_bytes(byte_t* bytes, size_t n, char* message = nullptr) {
+inline void print_bytes(const byte_t* bytes, size_t n, char* message = nullptr) {
     if (message)
         std::cout << message << "\n";
     for (size_t i = 0; i < n; i++) {

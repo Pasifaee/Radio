@@ -8,7 +8,6 @@
 // sox -S "just_boring.mp3" -r 44100 -b 16 -e signed-integer -c 2 -t raw - | pv -q -L 176400 | ./sikradio-sender -a 127.0.0.1 -n "Radio Muzyczka"
 
 // TODO:
-//  - zaimplementuj przesyłanie zgodnie z protokołem
 //  - pamiętaj o zmienianiu kolejności bajtów
 
 // Program arguments.
@@ -17,12 +16,20 @@ port_t DATA_PORT; // Receiver's port.
 size_t PSIZE; // Package size.
 std::string NAME; // Sender's name.
 
+// TODO:
+//   testy:
+//   - najpierw po prostu w jednym senderze zrób read i write i zobacz czy ładnie słychać muzykę
+//   - potem zrób przetwarzanie na i z datagramów ale nie przez sieć ?
+//   -
+
+//
+
 /**
  * Reads data from stdin.
  */
 ssize_t read_music(byte_t* buff) {
     ssize_t bytes_read = read(STDIN_FILENO, buff, PSIZE);
-    std::cout << "Read " << bytes_read << " bytes.\n";
+    // std::cout << "Read " << bytes_read << " bytes.\n";
     if (bytes_read < 0)
         PRINT_ERRNO();
     return bytes_read;
@@ -62,11 +69,11 @@ void read_and_send_music() {
         if ((size_t) bytes_read < PSIZE)
             break;
 
-        std::cout << "Datagram: \n";
-        print_bytes(datagram, 8);
-        print_bytes(datagram + 8, 8);
-        print_bytes(datagram + 16, PSIZE);
-        std::cout << "\n\n";
+//        std::cout << "Datagram: \n";
+//        print_bytes(datagram, 8);
+//        print_bytes(datagram + 8, 8);
+//        print_bytes(datagram + 16, PSIZE);
+//        std::cout << "\n\n";
 
         send_data_to(socket_fd, &send_address, datagram, PSIZE + 16);
         first_byte_num += bytes_read;
