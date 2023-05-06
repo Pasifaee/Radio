@@ -80,7 +80,7 @@ void write_package_to_buffer(const audio_pack package, byte_t* buffer) {
     size_t eff_buffer_size = BSIZE - BSIZE % PSIZE;
 
     // If the incoming package is 'older' than the oldest currently in the buffer, we ignore it.
-    if (package.first_byte_num < write_byte - eff_buffer_size)
+    if ((ssize_t) package.first_byte_num < (ssize_t) (write_byte - eff_buffer_size))
         return;
 
     if (package.first_byte_num >= write_byte) { // Buffer's cycle boundary (write_byte) needs to move and parts of buffer need to be cleaned.
@@ -88,12 +88,13 @@ void write_package_to_buffer(const audio_pack package, byte_t* buffer) {
         uint64_t new_write_byte = package.first_byte_num + PSIZE;
         // Cleaning the buffer. Which parts of the buffer we clean depends on how much the cycle boundary (write_byte) moved.
         if (clean_until - write_byte < eff_buffer_size) {
-            if (clean_until % eff_buffer_size > write_byte % eff_buffer_size) {
+            uint64_t write_ptr = write_byte % eff_buffer_size; // Pointer on the next place in the buffer to write into.
+            if (clean_until % eff_buffer_size >= write_ptr) {
                 // Clean a part of the buffer to the right of the write_byte.
-                memset(buffer + write_byte, 0, clean_until - write_byte);
+                memset(buffer + write_ptr, 0, clean_until - write_byte);
             } else {
                 // Clean the buffer to the right of the write_byte and a part in the beginning.
-                memset(buffer + write_byte, 0, eff_buffer_size - write_byte);
+                memset(buffer + write_ptr, 0, eff_buffer_size - write_ptr);
                 memset(buffer, 0, clean_until % eff_buffer_size);
             }
         } else {
@@ -101,7 +102,7 @@ void write_package_to_buffer(const audio_pack package, byte_t* buffer) {
             memset(buffer, 0, eff_buffer_size);
         }
         // Update 'pointers'.
-        play_byte = std::max(play_byte, new_write_byte - eff_buffer_size); // TODO: does this make sense
+        play_byte = (size_t) std::max((ssize_t) play_byte, (ssize_t) (new_write_byte - eff_buffer_size)); // TODO: does this make sense
         write_byte = new_write_byte;
     }
 
