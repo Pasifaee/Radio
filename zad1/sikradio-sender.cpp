@@ -24,6 +24,8 @@ ssize_t read_music(byte_t* buff) {
  * Reads a package of data and fills the datagram. Returns number of bytes read.
  */
 ssize_t fill_audio_datagram(byte_t* datagram, uint64_t session_id, uint64_t first_byte_num) {
+    memset(datagram, 0, PSIZE + 16);
+
     ssize_t bytes_read = read_music(datagram + 16);
 
     session_id = htobe64(session_id);
@@ -49,26 +51,23 @@ void read_and_send_music() {
     byte_t datagram[PSIZE + 16];
     uint64_t session_id = time(nullptr);
     uint64_t first_byte_num = 0;
-    uint8_t debug_byte = 0, debug_count = 0;
     while (true) {
-        debug_count++;
         ssize_t bytes_read = fill_audio_datagram(datagram, session_id, first_byte_num);
 
-        if ((size_t) bytes_read < PSIZE)
+        if ((size_t) bytes_read == 0)
             break;
 
-        ssize_t bytes_sent = send_data_to(socket_fd, &send_address, datagram, PSIZE + 16);
-        assert(bytes_read + 16 == bytes_sent);
-        first_byte_num += bytes_read;
+        send_data_to(socket_fd, &send_address, datagram, PSIZE + 16);
+        first_byte_num += PSIZE;
     }
 
     CHECK_ERRNO(close(socket_fd));
 }
 
-//int main(int argc, char* argv[]) {
-//    get_options(true, argc, argv, &DEST_ADDR, &DATA_PORT_RECV, nullptr, &PSIZE, &NAME);
-//
-//    read_and_send_music();
-//
-//    exit(0);
-//}
+int main(int argc, char* argv[]) {
+    get_options(true, argc, argv, &DEST_ADDR, &DATA_PORT_RECV, nullptr, &PSIZE, &NAME);
+
+    read_and_send_music();
+
+    exit(0);
+}

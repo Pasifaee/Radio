@@ -164,7 +164,7 @@ void transmit_music() {
     CHECK_ERRNO(close(poll_desc.fd));
 }
 
-//int main(int argc, char* argv[]) {
-//    get_options(false, argc, argv, &SRC_ADDR, &DATA_PORT, &BSIZE);
-//    transmit_music();
-//}
+int main(int argc, char* argv[]) {
+    get_options(false, argc, argv, &SRC_ADDR, &DATA_PORT, &BSIZE);
+    transmit_music();
+}
