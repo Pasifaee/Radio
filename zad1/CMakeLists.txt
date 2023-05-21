@@ -3,8 +3,8 @@ cmake_minimum_required (VERSION 3.1)
 project(MIMUW_SIK_ZAD1)
 
 set(CMAKE_C_STANDARD 11)
-set(CMAKE_CXX_FLAGS "-g -Wall -Wextra -O2")
-# set(CMAKE_CXX_FLAGS "-g -Wall -Wextra")
+# set(CMAKE_CXX_FLAGS "-g -Wall -Wextra -O2") # Release
+set(CMAKE_CXX_FLAGS "-g -Wall -Wextra") # Debug
 
 set(Boost_USE_STATIC_LIBS OFF)
 set(Boost_USE_MULTITHREADED ON)

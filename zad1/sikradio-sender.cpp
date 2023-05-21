@@ -16,6 +16,8 @@ port_t DATA_PORT; // Receiver's port.
 size_t PSIZE; // Package size.
 std::string NAME; // Sender's name.
 
+bool print_logs = false, debug_mode = false;
+
 // TODO:
 //   testy:
 //   - najpierw po prostu w jednym senderze zrób read i write i zobacz czy ładnie słychać muzykę
@@ -29,7 +31,7 @@ std::string NAME; // Sender's name.
  */
 ssize_t read_music(byte_t* buff) {
     ssize_t bytes_read = read(STDIN_FILENO, buff, PSIZE);
-    // std::cout << "Read " << bytes_read << " bytes.\n";
+    std::cout << "Read " << bytes_read << " bytes.\n";
     if (bytes_read < 0)
         PRINT_ERRNO();
     return bytes_read;
@@ -64,21 +66,40 @@ void read_and_send_music() {
     byte_t datagram[PSIZE + 16];
     uint64_t session_id = time(nullptr);
     uint64_t first_byte_num = 0;
+    uint8_t debug_byte = 0, debug_count = 0;
     while (true) {
+        debug_count++;
         ssize_t bytes_read = fill_audio_datagram(datagram, session_id, first_byte_num);
-        if ((size_t) bytes_read < PSIZE)
-            break;
 
+        if (debug_mode) {
+            if (bytes_read <= 0)
+                break;
+        } else {
+            if ((size_t) bytes_read < PSIZE)
+                break;
+        }
+
+        if (debug_mode) {
+            // memset(datagram + 16, 1, PSIZE);
+            debug_byte = 0;
+            datagram[16] = debug_count;
+            for (int i = 1; i < PSIZE; i++) {
+                datagram[i + 16] = debug_byte;
+                debug_byte++;
+            }
+        }
 //        std::cout << "Datagram: \n";
 //        print_bytes(datagram, 8);
 //        print_bytes(datagram + 8, 8);
-//        print_bytes(datagram + 16, PSIZE);
+        // print_bytes(datagram + 16, PSIZE, "Bytes sent:");
 //        std::cout << "\n\n";
 
-        send_data_to(socket_fd, &send_address, datagram, PSIZE + 16);
+        ssize_t bytes_sent = send_data_to(socket_fd, &send_address, datagram, PSIZE + 16);
+        assert(bytes_read + 16 == bytes_sent);
         first_byte_num += bytes_read;
     }
 
+    if (print_logs) std::cout << "Bytes sent in total: " << first_byte_num << "\n";
     CHECK_ERRNO(close(socket_fd));
 }
 

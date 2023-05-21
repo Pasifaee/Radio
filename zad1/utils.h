@@ -28,10 +28,12 @@ struct audio_pack {
  */
 void get_options(bool sender, int ac, char* av[], addr_t* address, port_t* port, size_t* bsize, size_t* psize = nullptr, std::string* name = nullptr);
 
-inline void print_bytes(const byte_t* bytes, size_t n, char* message = nullptr) {
+inline void print_bytes(const byte_t* bytes, ssize_t n, const char* message = nullptr) {
+    if (n == -1)
+        return;
     if (message)
         std::cout << message << "\n";
-    for (size_t i = 0; i < n; i++) {
+    for (ssize_t i = 0; i < n; i++) {
         std::cout << std::hex << (unsigned int) bytes[i] << " ";
     }
     std::cout << "\n";
