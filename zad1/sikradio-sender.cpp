@@ -1,37 +1,20 @@
 #include <cstdint>
 #include <string>
 #include <unistd.h>
-#include "net_utils.h"
 #include "utils.h"
 
-// Polecenie do wysłania muzyki:
-// sox -S "just_boring.mp3" -r 44100 -b 16 -e signed-integer -c 2 -t raw - | pv -q -L 176400 | ./sikradio-sender -a 127.0.0.1 -n "Radio Muzyczka"
-
-// TODO:
-//  - pamiętaj o zmienianiu kolejności bajtów
-
-// Program arguments.
+/* Program arguments. */
 addr_t DEST_ADDR; // IPv4 receiver's address.
-port_t DATA_PORT; // Receiver's port.
+port_t DATA_PORT_RECV; // Receiver's port.
 size_t PSIZE; // Package size.
 std::string NAME; // Sender's name.
 
-bool print_logs = false, debug_mode = false;
-
-// TODO:
-//   testy:
-//   - najpierw po prostu w jednym senderze zrób read i write i zobacz czy ładnie słychać muzykę
-//   - potem zrób przetwarzanie na i z datagramów ale nie przez sieć ?
-//   -
-
-//
 
 /**
  * Reads data from stdin.
  */
 ssize_t read_music(byte_t* buff) {
     ssize_t bytes_read = read(STDIN_FILENO, buff, PSIZE);
-    std::cout << "Read " << bytes_read << " bytes.\n";
     if (bytes_read < 0)
         PRINT_ERRNO();
     return bytes_read;
@@ -53,11 +36,11 @@ ssize_t fill_audio_datagram(byte_t* datagram, uint64_t session_id, uint64_t firs
 }
 
 /**
- * Sends data via UDP to DEST_ADDR on port DATA_PORT. It sends
+ * Sends data via UDP to DEST_ADDR on port DATA_PORT_RECV. It sends
  * the data in packages of size PSIZE.
  */
 void read_and_send_music() {
-    struct sockaddr_in send_address = get_address(DEST_ADDR.data(), DATA_PORT);
+    struct sockaddr_in send_address = get_address(DEST_ADDR.data(), DATA_PORT_RECV);
 
     int socket_fd = socket(PF_INET, SOCK_DGRAM, 0);
     if (socket_fd < 0)
@@ -71,42 +54,21 @@ void read_and_send_music() {
         debug_count++;
         ssize_t bytes_read = fill_audio_datagram(datagram, session_id, first_byte_num);
 
-        if (debug_mode) {
-            if (bytes_read <= 0)
-                break;
-        } else {
-            if ((size_t) bytes_read < PSIZE)
-                break;
-        }
-
-        if (debug_mode) {
-            // memset(datagram + 16, 1, PSIZE);
-            debug_byte = 0;
-            datagram[16] = debug_count;
-            for (int i = 1; i < PSIZE; i++) {
-                datagram[i + 16] = debug_byte;
-                debug_byte++;
-            }
-        }
-//        std::cout << "Datagram: \n";
-//        print_bytes(datagram, 8);
-//        print_bytes(datagram + 8, 8);
-        // print_bytes(datagram + 16, PSIZE, "Bytes sent:");
-//        std::cout << "\n\n";
+        if ((size_t) bytes_read < PSIZE)
+            break;
 
         ssize_t bytes_sent = send_data_to(socket_fd, &send_address, datagram, PSIZE + 16);
         assert(bytes_read + 16 == bytes_sent);
         first_byte_num += bytes_read;
     }
 
-    if (print_logs) std::cout << "Bytes sent in total: " << first_byte_num << "\n";
     CHECK_ERRNO(close(socket_fd));
 }
 
-int main(int argc, char* argv[]) {
-    get_options(true, argc, argv, &DEST_ADDR, &DATA_PORT, nullptr, &PSIZE, &NAME);
-
-    read_and_send_music();
-
-    exit(0);
-}
+//int main(int argc, char* argv[]) {
+//    get_options(true, argc, argv, &DEST_ADDR, &DATA_PORT_RECV, nullptr, &PSIZE, &NAME);
+//
+//    read_and_send_music();
+//
+//    exit(0);
+//}

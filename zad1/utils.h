@@ -24,7 +24,7 @@ struct audio_pack {
 };
 
 /**
- * TODO
+ * TODO - description
  */
 void get_options(bool sender, int ac, char* av[], addr_t* address, port_t* port, size_t* bsize, size_t* psize = nullptr, std::string* name = nullptr);
 
