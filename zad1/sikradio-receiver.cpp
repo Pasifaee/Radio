@@ -4,16 +4,18 @@
 #include "net_utils.h"
 #include "utils.h"
 
-// TODO: milsza obsługa błędóœ (staramy się naprawiać sytuację)
+// TODO - usunąć "magiczne stałe" (takie jak 8, 16)
 
 /* Program arguments. */
 addr_t SRC_ADDR; // IPv4 sender's address.
 port_t DATA_PORT; // Receiver's port.
 size_t BSIZE; // Buffer size.
 
-static uint64_t last_session_id = 0;
-static bool playing;
-size_t PSIZE_CURR; // Size of audio data in last received package.
+uint64_t last_session_id = 0;
+bool playing;
+size_t PSIZE; // Size of audio data in last received package.
+uint64_t BYTE0;
+
 
 // Important: ordering from byte0! (byte0 <-> 0)
 uint64_t play_byte; // Number of first byte of the package that's gonna be transmitted to stdout next.
@@ -26,7 +28,7 @@ audio_pack read_datagram(const byte_t* datagram, size_t package_size) {
     package.session_id = be64toh(package.session_id);
     memcpy(&package.first_byte_num, datagram + 8, 8);
     package.first_byte_num = be64toh(package.first_byte_num);
-    package.audio_data = (byte_t*) malloc((package_size - 16) * sizeof(byte_t)); // TODO: free
+    package.audio_data = (byte_t*) malloc((package_size - 16) * sizeof(byte_t)); // TODO: free OR how to do this without malloc?
     memcpy(package.audio_data, datagram + 16, package_size - 16);
     return package;
 }
@@ -57,17 +59,17 @@ ssize_t receive_new_package(int socket_fd, byte_t* start_buffer) {
 
 void new_audio_session(audio_pack start_package, size_t new_PSIZE, byte_t* buffer) {
     playing = false;
-    play_byte = start_package.first_byte_num;
-    write_byte = start_package.first_byte_num;
-    PSIZE_CURR = new_PSIZE;
+    BYTE0 = start_package.first_byte_num;
+    play_byte = BYTE0;
+    write_byte = BYTE0;
+    PSIZE = new_PSIZE;
 
     last_session_id = start_package.session_id;
     memset(buffer, 0, BSIZE); // Cleaning the buffer.
 }
 
-// TODO: Test this - here look for potential errors, most bug-prone part of the code I think!!
 void write_package_to_buffer(const audio_pack package, byte_t* buffer) {
-    size_t eff_buffer_size = BSIZE - BSIZE % PSIZE_CURR;
+    size_t eff_buffer_size = BSIZE - BSIZE % PSIZE;
 
     // If the incoming package is 'older' than the oldest currently in the buffer, we ignore it.
     if ((ssize_t) package.first_byte_num < (ssize_t) (write_byte - eff_buffer_size))
@@ -75,10 +77,10 @@ void write_package_to_buffer(const audio_pack package, byte_t* buffer) {
 
     if (package.first_byte_num >= write_byte) { // Buffer's cycle boundary (write_byte) needs to move and parts of buffer need to be cleaned.
         uint64_t clean_until = package.first_byte_num;
-        uint64_t new_write_byte = package.first_byte_num + PSIZE_CURR;
+        uint64_t new_write_byte = package.first_byte_num + PSIZE;
         // Cleaning the buffer. Which parts of the buffer we clean depends on how much the cycle boundary (write_byte) moved.
         if (clean_until - write_byte < eff_buffer_size) {
-            uint64_t write_ptr = write_byte % eff_buffer_size; // Pointer on the next place in the buffer to write into.
+            uint64_t write_ptr = write_byte % eff_buffer_size; // Pointer to the next place in the buffer to write into.
             if (clean_until % eff_buffer_size >= write_ptr) {
                 // Clean a part of the buffer to the right of the write_byte.
                 memset(buffer + write_ptr, 0, clean_until - write_byte);
@@ -93,12 +95,12 @@ void write_package_to_buffer(const audio_pack package, byte_t* buffer) {
         }
 
         // Update 'pointers'.
-        play_byte = (size_t) std::max((ssize_t) play_byte, (ssize_t) (new_write_byte - eff_buffer_size)); // TODO: does this make sense
+        play_byte = (size_t) std::max((ssize_t) play_byte, (ssize_t) (new_write_byte - eff_buffer_size));
         write_byte = new_write_byte;
     }
 
     // Copy audio_data from package to buffer.
-    memcpy(buffer + (package.first_byte_num % eff_buffer_size), package.audio_data, PSIZE_CURR); // TODO
+    memcpy(buffer + (package.first_byte_num % eff_buffer_size), package.audio_data, PSIZE);
 }
 
 void handle_new_package(size_t package_size, const byte_t* datagram, byte_t* buffer) {
@@ -109,18 +111,15 @@ void handle_new_package(size_t package_size, const byte_t* datagram, byte_t* buf
     }
     if (package.session_id >= last_session_id) {
         write_package_to_buffer(package, buffer);
-        // write(STDOUT_FILENO, datagram + 16, package_size - 16);
     }
     // If session_id < last_session_id then ignore_package;
 
-    playing |= package.first_byte_num >= play_byte + (BSIZE * 3 / 4); // TODO: make sure this makes sense.
+    playing |= package.first_byte_num >= BYTE0 + (BSIZE * 3 / 4);
 }
 
 /**
  * TODO
- *   - check out event pollout
  *   - handle missing packages - change array to a set?
- *   - handle ctrl+C
  */
 void transmit_music() {
     byte_t start_buffer[BSIZE + 1];
@@ -152,12 +151,14 @@ void transmit_music() {
 
         // PART 2 : transmitting data to stdout (playing music)
         if (playing && play_byte < write_byte) {
-            size_t eff_buffer_size = BSIZE - BSIZE % PSIZE_CURR;
-            ssize_t bytes_written = write(STDOUT_FILENO, buffer + (play_byte % eff_buffer_size), PSIZE_CURR);
-            assert(bytes_written > 0 && (size_t) bytes_written == PSIZE_CURR);
+            size_t eff_buffer_size = BSIZE - BSIZE % PSIZE;
+            ssize_t bytes_written = write(STDOUT_FILENO, buffer + (play_byte % eff_buffer_size), PSIZE);
+            assert(bytes_written > 0 && (size_t) bytes_written == PSIZE);
 
-            play_byte += PSIZE_CURR;
+            play_byte += PSIZE;
         }
+
+        //std::cout << "PLAY_BYTE = " << play_byte << ", WRITE_BYTE = " << write_byte << "\n";
 
     } while (true);
 
