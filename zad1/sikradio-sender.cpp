@@ -57,6 +57,9 @@ void read_and_send_music() {
         if ((size_t) bytes_read == 0)
             break;
 
+        if ((size_t) bytes_read % PSIZE != 0)
+            continue;
+
         send_data_to(socket_fd, &send_address, datagram, PSIZE + 16);
         first_byte_num += PSIZE;
     }
