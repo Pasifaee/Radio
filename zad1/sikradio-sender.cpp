@@ -13,20 +13,20 @@ std::string NAME; // Sender's name.
 /**
  * Reads data from stdin.
  */
-ssize_t read_music(byte_t* buff) {
-    ssize_t bytes_read = read(STDIN_FILENO, buff, PSIZE);
+size_t read_music(byte_t* buff, size_t n) {
+    ssize_t bytes_read = read(STDIN_FILENO, buff, n);
     if (bytes_read < 0)
         PRINT_ERRNO();
-    return bytes_read;
+    return (size_t) bytes_read;
 }
 
 /**
  * Reads a package of data and fills the datagram. Returns number of bytes read.
  */
-ssize_t fill_audio_datagram(byte_t* datagram, uint64_t session_id, uint64_t first_byte_num) {
+size_t fill_audio_datagram(byte_t* datagram, uint64_t session_id, uint64_t first_byte_num) {
     memset(datagram, 0, PSIZE + 16);
 
-    ssize_t bytes_read = read_music(datagram + 16);
+    size_t bytes_read = read_music(datagram + 16, PSIZE);
 
     session_id = htobe64(session_id);
     first_byte_num = htobe64(first_byte_num);
@@ -36,6 +36,11 @@ ssize_t fill_audio_datagram(byte_t* datagram, uint64_t session_id, uint64_t firs
 
     return bytes_read;
 }
+
+size_t refill_audio_datagram(byte_t* datagram, size_t from) {
+    return read_music(datagram + from + 16, PSIZE - from);
+}
+
 
 /**
  * Sends data via UDP to DEST_ADDR on port DATA_PORT. It sends
@@ -52,19 +57,16 @@ void read_and_send_music() {
     uint64_t session_id = time(nullptr);
     uint64_t first_byte_num = 0;
     while (true) {
-        ssize_t bytes_read = fill_audio_datagram(datagram, session_id, first_byte_num);
-
-        if ((size_t) bytes_read == 0)
-            break;
-
-        if ((size_t) bytes_read % PSIZE != 0)
-            continue;
+        size_t bytes_read = fill_audio_datagram(datagram, session_id, first_byte_num);
+        while (bytes_read < PSIZE) {
+            if (bytes_read == 0)
+                CHECK_ERRNO(close(socket_fd)); // TODO: Fix: getting error "bad file descriptor"
+            bytes_read += refill_audio_datagram(datagram, bytes_read);
+        }
 
         send_data_to(socket_fd, &send_address, datagram, PSIZE + 16);
         first_byte_num += PSIZE;
     }
-
-    CHECK_ERRNO(close(socket_fd));
 }
 
 int main(int argc, char* argv[]) {
