@@ -8,7 +8,7 @@
 #define OUT 1
 
 /* Program arguments. */
-addr_t SRC_ADDR; // IPv4 sender's address.
+addr_t MCAST_ADDR; // IPv4 sender's address.
 port_t DATA_PORT; // Receiver's port.
 size_t BSIZE; // Buffer size.
 
@@ -32,33 +32,6 @@ audio_pack read_datagram(const byte_t* datagram, size_t package_size) {
     package.audio_data = (byte_t*) malloc((package_size - 2 * sizeof (uint64_t)) * sizeof (byte_t)); // TODO: free OR how to do this without malloc?
     memcpy(package.audio_data, datagram + 2 * sizeof (uint64_t), package_size - 2 * sizeof (uint64_t));
     return package;
-}
-
-void init_connection(struct pollfd* poll_desc) {
-    int socket_fd = socket(PF_INET, SOCK_DGRAM, 0);
-    if (socket_fd < 0)
-        PRINT_ERRNO();
-    bind_socket(socket_fd, DATA_PORT);
-
-    poll_desc[IN].fd = socket_fd;
-    poll_desc[IN].events = POLLIN;
-
-    poll_desc[OUT].fd = STDOUT_FILENO;
-    poll_desc[OUT].events = 0;
-}
-
-/**
- * Receives a package from any address.
- * @return Package size (maximum is BSIZE + 1) or -1 if incoming address is different than SRC_ADDR.
- */
-ssize_t receive_new_package(int socket_fd, byte_t* start_buffer) {
-    struct sockaddr_in sender_address = get_address(SRC_ADDR.data(), 0);
-    struct sockaddr_in incoming_address{};
-
-    ssize_t package_size = receive_data_from(socket_fd, &incoming_address, start_buffer, BSIZE + 1);
-    if (sender_address.sin_addr.s_addr != incoming_address.sin_addr.s_addr) // TODO: przetestować czy z innych adresów nie przychodzi
-        return -1;
-    return package_size;
 }
 
 void new_audio_session(audio_pack start_package, size_t new_PSIZE, byte_t* buffer) {
@@ -146,12 +119,33 @@ void handle_new_package(size_t package_size, const byte_t* datagram, byte_t* buf
     playing |= package.first_byte_num >= BYTE0 + (BSIZE * 3 / 4);
 }
 
+void init_connection(struct pollfd* poll_desc, struct ip_mreq* ip_mreq) {
+    int audio_socket = socket(PF_INET, SOCK_DGRAM, 0);
+    if (audio_socket < 0)
+        PRINT_ERRNO();
+
+    // Connecting to multicast address.
+    ip_mreq->imr_interface.s_addr = htonl(INADDR_ANY);
+    if (inet_aton(MCAST_ADDR.c_str(), &ip_mreq->imr_multiaddr) == 0) {
+        fatal("inet_aton - invalid multicast address\n");
+    }
+    CHECK_ERRNO(setsockopt(audio_socket, IPPROTO_IP, IP_ADD_MEMBERSHIP, (void *) ip_mreq, sizeof *ip_mreq));
+    bind_socket(audio_socket, DATA_PORT);
+
+    poll_desc[IN].fd = audio_socket;
+    poll_desc[IN].events = POLLIN;
+
+    poll_desc[OUT].fd = STDOUT_FILENO;
+    poll_desc[OUT].events = 0;
+}
+
 void transmit_music() {
     byte_t start_buffer[BSIZE + 1];
     byte_t buffer[BSIZE];
 
     struct pollfd poll_desc[2];
-    init_connection(poll_desc);
+    struct ip_mreq ip_mreq{};
+    init_connection(poll_desc, &ip_mreq);
 
     int timeout = -1; // Wait indefinitely.
     do {
@@ -166,7 +160,7 @@ void transmit_music() {
                 PRINT_ERRNO();
         } else {
             if (poll_desc[IN].revents & POLLIN) {
-                ssize_t package_size = receive_new_package(poll_desc[IN].fd, start_buffer);
+                size_t package_size = receive_data(poll_desc[IN].fd, start_buffer, BSIZE + 1);
                 if (package_size > 0 && (size_t) package_size - 2 * sizeof (uint64_t) <= BSIZE) {
                     handle_new_package(package_size, start_buffer, buffer);
                 }
@@ -183,11 +177,14 @@ void transmit_music() {
         poll_desc[OUT].events = playing && play_byte < write_byte ? POLLOUT : 0;
     } while (true);
 
+    // Disconnecting from multicast address.
+    CHECK_ERRNO(setsockopt(poll_desc[IN].fd, IPPROTO_IP, IP_DROP_MEMBERSHIP, (void *) &ip_mreq, sizeof(ip_mreq)));
+
     CHECK_ERRNO(close(poll_desc[IN].fd));
 }
 
 // TODO: check if command line parameters are correct
 int main(int argc, char* argv[]) {
-    get_options(false, argc, argv, &SRC_ADDR, &DATA_PORT, &BSIZE);
+    get_options(false, argc, argv, &MCAST_ADDR, &DATA_PORT, &BSIZE);
     transmit_music();
 }

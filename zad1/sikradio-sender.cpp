@@ -3,8 +3,10 @@
 #include <unistd.h>
 #include "utils.h"
 
+#define TTL_VALUE     4
+
 /* Program arguments. */
-addr_t DEST_ADDR; // IPv4 receiver's address.
+addr_t MCAST_ADDR; // IPv4 multicast address.
 port_t DATA_PORT; // Receiver's port.
 size_t PSIZE; // Package size.
 std::string NAME; // Sender's name.
@@ -41,36 +43,57 @@ size_t refill_audio_datagram(byte_t* datagram, size_t from) {
     return read_music(datagram + from + 16, PSIZE - from);
 }
 
-
-/**
- * Sends data via UDP to DEST_ADDR on port DATA_PORT. It sends
- * the data in packages of size PSIZE.
- */
-void read_and_send_music() {
-    struct sockaddr_in send_address = get_address(DEST_ADDR.data(), DATA_PORT);
-
+int init_connection() {
     int socket_fd = socket(PF_INET, SOCK_DGRAM, 0);
     if (socket_fd < 0)
         PRINT_ERRNO();
+
+    // Configuring multicasting.
+    int optval = 1;
+    CHECK_ERRNO(setsockopt(socket_fd, SOL_SOCKET, SO_BROADCAST, (void *) &optval, sizeof optval));
+    optval = TTL_VALUE;
+    CHECK_ERRNO(setsockopt(socket_fd, IPPROTO_IP, IP_MULTICAST_TTL, (void *) &optval, sizeof optval));
+
+    struct sockaddr_in remote_address{};
+    remote_address.sin_family = PF_INET;
+    remote_address.sin_port = htons(DATA_PORT);
+    if (inet_aton(MCAST_ADDR.c_str(), &remote_address.sin_addr) == 0) {
+        fatal("ERROR: inet_aton - invalid multicast address\n");
+    }
+
+    connect_socket(socket_fd, &remote_address);
+    return socket_fd;
+}
+
+/**
+ * Sends data via UDP to MCAST_ADDR on port DATA_PORT. It sends
+ * the data in packages of size PSIZE.
+ */
+void read_and_send_music() {
+    int audio_socket = init_connection();
 
     byte_t datagram[PSIZE + 16];
     uint64_t session_id = time(nullptr);
     uint64_t first_byte_num = 0;
     while (true) {
         size_t bytes_read = fill_audio_datagram(datagram, session_id, first_byte_num);
-        while (bytes_read < PSIZE) {
-            if (bytes_read == 0)
-                CHECK_ERRNO(close(socket_fd)); // TODO: Fix: getting error "bad file descriptor"
-            bytes_read += refill_audio_datagram(datagram, bytes_read);
+        size_t total_bytes_read = bytes_read;
+        while (total_bytes_read < PSIZE) {
+            if (bytes_read == 0) {
+                CHECK_ERRNO(close(audio_socket)); // TODO: Fix: getting error "bad file descriptor"
+                exit(0);
+            }
+            bytes_read = refill_audio_datagram(datagram, total_bytes_read);
+            total_bytes_read += bytes_read;
         }
 
-        send_data_to(socket_fd, &send_address, datagram, PSIZE + 16);
+        send_data(audio_socket, datagram, PSIZE + 16); // Multicast audio data.
         first_byte_num += PSIZE;
     }
 }
 
 int main(int argc, char* argv[]) {
-    get_options(true, argc, argv, &DEST_ADDR, &DATA_PORT, nullptr, &PSIZE, &NAME);
+    get_options(true, argc, argv, &MCAST_ADDR, &DATA_PORT, nullptr, &PSIZE, &NAME);
 
     read_and_send_music();
 
