@@ -12,11 +12,11 @@ addr_t SRC_ADDR; // IPv4 sender's address.
 port_t DATA_PORT; // Receiver's port.
 size_t BSIZE; // Buffer size.
 
-uint64_t last_session_id = 0;
-bool playing;
 size_t PSIZE; // Size of audio data in last received package.
 uint64_t BYTE0;
-
+uint64_t last_session_id = 0;
+bool playing;
+std::set<uint64_t> missing;
 
 // Important: ordering from byte0! (byte0 <-> 0)
 uint64_t play_byte; // Number of first byte of the package that's gonna be transmitted to stdout next.
@@ -67,9 +67,33 @@ void new_audio_session(audio_pack start_package, size_t new_PSIZE, byte_t* buffe
     play_byte = BYTE0;
     write_byte = BYTE0;
     PSIZE = new_PSIZE;
+    missing.clear();
 
     last_session_id = start_package.session_id;
     memset(buffer, 0, BSIZE); // Cleaning the buffer.
+}
+
+// TODO: test this function
+void print_missing_packages(const audio_pack package) {
+    size_t eff_buffer_size = BSIZE - BSIZE % PSIZE;
+
+    if (package.first_byte_num > write_byte) { // Missing packages between old and new write_byte.
+        for (uint64_t i = write_byte; i < package.first_byte_num; i += PSIZE) {
+            if (i >= BYTE0)
+                missing.insert((i - BYTE0) / PSIZE);
+        }
+    } else if (package.first_byte_num < write_byte) { // Received package that was previously missing.
+        missing.erase((package.first_byte_num - BYTE0) / PSIZE);
+    }
+
+    if (write_byte >= eff_buffer_size + BYTE0) { // Remove old packages from missing.
+        auto it = missing.lower_bound((write_byte - eff_buffer_size - BYTE0) / PSIZE);
+        missing.erase(missing.begin(), it);
+    }
+
+    for (auto package_nr : missing) {
+        std::cerr << "MISSING " << package_nr << " BEFORE " << (package.first_byte_num - BYTE0) / PSIZE << "\n";
+    }
 }
 
 void write_package_to_buffer(const audio_pack package, byte_t* buffer) {
@@ -113,6 +137,7 @@ void handle_new_package(size_t package_size, const byte_t* datagram, byte_t* buf
     if (package.session_id > last_session_id) { // New session.
         new_audio_session(package, package_size - 16, buffer);
     }
+    print_missing_packages(package);
     if (package.session_id >= last_session_id) {
         write_package_to_buffer(package, buffer);
     }
