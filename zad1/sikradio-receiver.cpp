@@ -25,12 +25,12 @@ uint64_t write_byte; // Number of the last written byte + 1.
 
 audio_pack read_datagram(const byte_t* datagram, size_t package_size) {
     audio_pack package{};
-    memcpy(&package.session_id, datagram, 8);
+    memcpy(&package.session_id, datagram, sizeof (uint64_t));
     package.session_id = be64toh(package.session_id);
-    memcpy(&package.first_byte_num, datagram + 8, 8);
+    memcpy(&package.first_byte_num, datagram + sizeof (uint64_t), sizeof (uint64_t));
     package.first_byte_num = be64toh(package.first_byte_num);
-    package.audio_data = (byte_t*) malloc((package_size - 16) * sizeof(byte_t)); // TODO: free OR how to do this without malloc?
-    memcpy(package.audio_data, datagram + 16, package_size - 16);
+    package.audio_data = (byte_t*) malloc((package_size - 2 * sizeof (uint64_t)) * sizeof (byte_t)); // TODO: free OR how to do this without malloc?
+    memcpy(package.audio_data, datagram + 2 * sizeof (uint64_t), package_size - 2 * sizeof (uint64_t));
     return package;
 }
 
@@ -135,7 +135,7 @@ void handle_new_package(size_t package_size, const byte_t* datagram, byte_t* buf
     audio_pack package = read_datagram(datagram, package_size);
 
     if (package.session_id > last_session_id) { // New session.
-        new_audio_session(package, package_size - 16, buffer);
+        new_audio_session(package, package_size - 2 * sizeof (uint64_t), buffer);
     }
     print_missing_packages(package);
     if (package.session_id >= last_session_id) {
@@ -146,14 +146,9 @@ void handle_new_package(size_t package_size, const byte_t* datagram, byte_t* buf
     playing |= package.first_byte_num >= BYTE0 + (BSIZE * 3 / 4);
 }
 
-/**
- * TODO
- *   - handle missing packages - change array to a set?
- */
 void transmit_music() {
     byte_t start_buffer[BSIZE + 1];
     byte_t buffer[BSIZE];
-    bool missing[BSIZE]; // TODO: change to a set?
 
     struct pollfd poll_desc[2];
     init_connection(poll_desc);
@@ -191,6 +186,7 @@ void transmit_music() {
     CHECK_ERRNO(close(poll_desc[IN].fd));
 }
 
+// TODO: check if command line parameters are correct
 int main(int argc, char* argv[]) {
     get_options(false, argc, argv, &SRC_ADDR, &DATA_PORT, &BSIZE);
     transmit_music();
