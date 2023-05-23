@@ -4,7 +4,8 @@
 #include "net_utils.h"
 #include "utils.h"
 
-// TODO - usunąć "magiczne stałe" (takie jak 8, 16)
+#define IN 0
+#define OUT 1
 
 /* Program arguments. */
 addr_t SRC_ADDR; // IPv4 sender's address.
@@ -39,8 +40,11 @@ void init_connection(struct pollfd* poll_desc) {
         PRINT_ERRNO();
     bind_socket(socket_fd, DATA_PORT);
 
-    poll_desc->fd = socket_fd;
-    poll_desc->events = POLLIN;
+    poll_desc[IN].fd = socket_fd;
+    poll_desc[IN].events = POLLIN;
+
+    poll_desc[OUT].fd = STDOUT_FILENO;
+    poll_desc[OUT].events = 0;
 }
 
 /**
@@ -126,43 +130,40 @@ void transmit_music() {
     byte_t buffer[BSIZE];
     bool missing[BSIZE]; // TODO: change to a set?
 
-    struct pollfd poll_desc{};
-    init_connection(&poll_desc);
+    struct pollfd poll_desc[2];
+    init_connection(poll_desc);
 
+    int timeout = -1; // Wait indefinitely.
     do {
-        // PART 1 : receive a new package
-        poll_desc.revents = 0;
-        // If nothing can be played (written to stdout), block on poll.
-        int timeout = playing && play_byte < write_byte ? 0 : -1;
-        int poll_status = poll(&poll_desc, 1, timeout);
+        poll_desc[IN].revents = 0;
+        poll_desc[OUT].revents = 0;
+
+        int poll_status = poll(poll_desc, 2, timeout);
         if (poll_status == -1) {
             if (errno == EINTR)
                 std::cerr << "Interrupted system call\n";
             else
                 PRINT_ERRNO();
         } else {
-            if (poll_desc.revents & POLL_IN) {
-                ssize_t package_size = receive_new_package(poll_desc.fd, start_buffer);
-                if (package_size > 0 && (size_t) package_size - 16 <= BSIZE) {
+            if (poll_desc[IN].revents & POLLIN) {
+                ssize_t package_size = receive_new_package(poll_desc[IN].fd, start_buffer);
+                if (package_size > 0 && (size_t) package_size - 2 * sizeof (uint64_t) <= BSIZE) {
                     handle_new_package(package_size, start_buffer, buffer);
                 }
             }
+            if (poll_desc[OUT].revents & POLLOUT) {
+                size_t eff_buffer_size = BSIZE - BSIZE % PSIZE;
+                ssize_t bytes_written = write(STDOUT_FILENO, buffer + (play_byte % eff_buffer_size), PSIZE);
+                assert(bytes_written > 0 && (size_t) bytes_written == PSIZE);
+
+                play_byte += PSIZE;
+            }
         }
 
-        // PART 2 : transmitting data to stdout (playing music)
-        if (playing && play_byte < write_byte) {
-            size_t eff_buffer_size = BSIZE - BSIZE % PSIZE;
-            ssize_t bytes_written = write(STDOUT_FILENO, buffer + (play_byte % eff_buffer_size), PSIZE);
-            assert(bytes_written > 0 && (size_t) bytes_written == PSIZE);
-
-            play_byte += PSIZE;
-        }
-
-        //std::cout << "PLAY_BYTE = " << play_byte << ", WRITE_BYTE = " << write_byte << "\n";
-
+        poll_desc[OUT].events = playing && play_byte < write_byte ? POLLOUT : 0;
     } while (true);
 
-    CHECK_ERRNO(close(poll_desc.fd));
+    CHECK_ERRNO(close(poll_desc[IN].fd));
 }
 
 int main(int argc, char* argv[]) {
