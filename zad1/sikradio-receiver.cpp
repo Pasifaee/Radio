@@ -149,7 +149,7 @@ void transmit_music() {
     init_connection(poll_desc, &ip_mreq);
 
     int timeout = -1; // Wait indefinitely.
-    do {
+    while (true) {
         poll_desc[AUDIO_IN].revents = 0;
         poll_desc[STDOUT].revents = 0;
 
@@ -176,7 +176,7 @@ void transmit_music() {
         }
 
         poll_desc[STDOUT].events = playing && play_byte < write_byte ? POLLOUT : 0;
-    } while (true);
+    }
 
     // Disconnecting from multicast address.
     CHECK_ERRNO(setsockopt(poll_desc[AUDIO_IN].fd, IPPROTO_IP, IP_DROP_MEMBERSHIP, (void *) &ip_mreq, sizeof(ip_mreq)));

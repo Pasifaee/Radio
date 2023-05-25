@@ -5,7 +5,7 @@
 #include "utils.h"
 
 /* Descriptors related constants. */
-#define AUDIO_OUT 0
+#define STDIN 0
 #define CTRL 1
 
 #define TTL_VALUE     4
@@ -49,16 +49,20 @@ size_t refill_audio_datagram(byte_t* datagram, size_t from) {
     return read_music(datagram + from + 16, PSIZE - from);
 }
 
-void init_connection(struct pollfd* poll_desc) {
-    int audio_socket = socket(PF_INET, SOCK_DGRAM, 0); // UDP socket.
-    if (audio_socket < 0)
+/**
+ * Initializes network connections.
+ * @return Descriptor for audio socket.
+ */
+int init_connection(struct pollfd* poll_desc) {
+    int audio_socket_fd = socket(PF_INET, SOCK_DGRAM, 0); // UDP socket.
+    if (audio_socket_fd < 0)
         PRINT_ERRNO();
 
     // Configuring multicasting.
     int optval = 1;
-    CHECK_ERRNO(setsockopt(audio_socket, SOL_SOCKET, SO_BROADCAST, (void *) &optval, sizeof optval));
+    CHECK_ERRNO(setsockopt(audio_socket_fd, SOL_SOCKET, SO_BROADCAST, (void *) &optval, sizeof optval));
     optval = TTL_VALUE;
-    CHECK_ERRNO(setsockopt(audio_socket, IPPROTO_IP, IP_MULTICAST_TTL, (void *) &optval, sizeof optval));
+    CHECK_ERRNO(setsockopt(audio_socket_fd, IPPROTO_IP, IP_MULTICAST_TTL, (void *) &optval, sizeof optval));
 
     struct sockaddr_in remote_address{};
     remote_address.sin_family = PF_INET;
@@ -67,10 +71,10 @@ void init_connection(struct pollfd* poll_desc) {
         fatal("ERROR: inet_aton - invalid multicast address\n");
     }
 
-    connect_socket(audio_socket, &remote_address);
+    connect_socket(audio_socket_fd, &remote_address);
 
-    poll_desc[AUDIO_OUT].fd = audio_socket;
-    poll_desc[AUDIO_OUT].events = POLLOUT;
+    poll_desc[STDIN].fd = STDIN_FILENO;
+    poll_desc[STDIN].events = POLLIN;
 
     int ctrl_socket = socket(PF_INET, SOCK_DGRAM, 0); // UDP socket.
     if (ctrl_socket < 0)
@@ -79,40 +83,50 @@ void init_connection(struct pollfd* poll_desc) {
 
     poll_desc[CTRL].fd = ctrl_socket;
     poll_desc[CTRL].events = POLLIN;
-}
 
-/**
- * Sends data via UDP to MCAST_ADDR on port DATA_PORT. It sends
- * the data in packages of size PSIZE.
- */
-void read_and_send_music() {
-    struct pollfd poll_desc[2];
-    init_connection(poll_desc);
-
-    byte_t datagram[PSIZE + 16];
-    uint64_t session_id = time(nullptr);
-    uint64_t first_byte_num = 0;
-    while (true) {
-        size_t bytes_read = fill_audio_datagram(datagram, session_id, first_byte_num);
-        size_t total_bytes_read = bytes_read;
-        while (total_bytes_read < PSIZE) {
-            if (bytes_read == 0) {
-                CHECK_ERRNO(close(poll_desc[AUDIO_OUT].fd)); // TODO: Fix: getting error "bad file descriptor"
-                exit(0);
-            }
-            bytes_read = refill_audio_datagram(datagram, total_bytes_read);
-            total_bytes_read += bytes_read;
-        }
-
-        send_data(poll_desc[AUDIO_OUT].fd, datagram, PSIZE + 16); // Multicast audio data.
-        first_byte_num += PSIZE;
-    }
+    return audio_socket_fd;
 }
 
 int main(int argc, char* argv[]) {
     get_options(true, argc, argv, &MCAST_ADDR, &DATA_PORT, &CTRL_PORT, nullptr, &PSIZE, &NAME);
 
-    read_and_send_music();
+    struct pollfd poll_desc[2];
+    int audio_socket_fd = init_connection(poll_desc);
 
-    exit(0);
+    byte_t datagram[PSIZE + 16];
+    uint64_t session_id = time(nullptr);
+    uint64_t first_byte_num = 0;
+
+    int timeout = -1; // Wait indefinitely. // TODO if we change timeout we need to handle poll_status == 0
+    while (true) {
+        poll_desc[STDIN].revents = 0;
+        poll_desc[CTRL].revents = 0;
+
+        int poll_status = poll(poll_desc, 2, timeout);
+        if (poll_status == -1) {
+            if (errno == EINTR)
+                std::cerr << "Interrupted system call\n";
+            else
+                PRINT_ERRNO();
+        } else {
+            if (poll_desc[STDIN].revents & POLLIN) {
+                size_t bytes_read = fill_audio_datagram(datagram, session_id, first_byte_num);
+                size_t total_bytes_read = bytes_read;
+                while (total_bytes_read < PSIZE) {
+                    if (bytes_read == 0) {
+                        CHECK_ERRNO(close(audio_socket_fd));
+                        exit(0);
+                    }
+                    bytes_read = refill_audio_datagram(datagram, total_bytes_read);
+                    total_bytes_read += bytes_read;
+                }
+
+                send_data(audio_socket_fd, datagram, PSIZE + 16); // Multicast audio data.
+                first_byte_num += PSIZE;
+            }
+            if (poll_desc[CTRL].revents & POLLIN) {
+                ;
+            }
+        }
+    }
 }
