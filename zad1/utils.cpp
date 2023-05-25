@@ -79,6 +79,20 @@ std::string create_message(message msg) {
 
 /** Parsing messages **/
 
+/**
+ * Trims a string out of spaces at the beginning and at the end.
+ * @return Trimmed string.
+ */
+std::string trim(const std::string& s)
+{
+    size_t first = s.find_first_not_of(' ');
+    size_t last = s.find_last_not_of(' ');
+    if (first == std::string::npos) {
+        return "";
+    }
+    return s.substr(first, (last-first+1));
+}
+
 bool valid_chars(std::string s) {
     for (auto c : s) {
         if (c != '\n' && (c < 32 || c > 127))
@@ -184,7 +198,7 @@ message parse_reply(const std::string& msg_str, std::vector<std::string> msg_par
         return fail_msg;
 
     size_t first_args_len = msg_parts[0].length() + msg_parts[1].length() + msg_parts[2].length() + 3;
-    std::string name = msg_str.substr(first_args_len, msg_str.length() - first_args_len - 1);
+    std::string name = trim(msg_str.substr(first_args_len, msg_str.length() - first_args_len - 1));
     if (name.empty())
         return fail_msg;
 
