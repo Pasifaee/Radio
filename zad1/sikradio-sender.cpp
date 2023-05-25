@@ -9,6 +9,7 @@
 #define CTRL 1
 
 #define TTL_VALUE     4
+#define MSG_BUFF_SIZE 1024
 
 /* Program arguments. */
 addr_t MCAST_ADDR; // IPv4 multicast address.
@@ -47,6 +48,22 @@ size_t fill_audio_datagram(byte_t* datagram, uint64_t session_id, uint64_t first
 
 size_t refill_audio_datagram(byte_t* datagram, size_t from) {
     return read_music(datagram + from + 16, PSIZE - from);
+}
+
+void read_and_send_music(byte_t* datagram, int send_fd, uint64_t session_id, uint64_t& first_byte_num) {
+    size_t bytes_read = fill_audio_datagram(datagram, session_id, first_byte_num);
+    size_t total_bytes_read = bytes_read;
+    while (total_bytes_read < PSIZE) {
+        if (bytes_read == 0) {
+            CHECK_ERRNO(close(send_fd));
+            exit(0);
+        }
+        bytes_read = refill_audio_datagram(datagram, total_bytes_read);
+        total_bytes_read += bytes_read;
+    }
+
+    send_data(send_fd, datagram, PSIZE + 16); // Multicast audio data.
+    first_byte_num += PSIZE;
 }
 
 /**
@@ -110,22 +127,23 @@ int main(int argc, char* argv[]) {
                 PRINT_ERRNO();
         } else {
             if (poll_desc[STDIN].revents & POLLIN) {
-                size_t bytes_read = fill_audio_datagram(datagram, session_id, first_byte_num);
-                size_t total_bytes_read = bytes_read;
-                while (total_bytes_read < PSIZE) {
-                    if (bytes_read == 0) {
-                        CHECK_ERRNO(close(audio_socket_fd));
-                        exit(0);
-                    }
-                    bytes_read = refill_audio_datagram(datagram, total_bytes_read);
-                    total_bytes_read += bytes_read;
-                }
-
-                send_data(audio_socket_fd, datagram, PSIZE + 16); // Multicast audio data.
-                first_byte_num += PSIZE;
+                read_and_send_music(datagram, audio_socket_fd, session_id, first_byte_num);
             }
             if (poll_desc[CTRL].revents & POLLIN) {
-                ;
+                char msg_str[MSG_BUFF_SIZE];
+
+                struct sockaddr_in receiver_addr{};
+                size_t msg_len = receive_data_from(poll_desc[CTRL].fd, &receiver_addr, msg_str, MSG_BUFF_SIZE - 1);
+                msg_str[msg_len] = 0;
+
+                message msg = parse_message(std::string(msg_str));
+
+                if (msg.msg_type == LOOKUP) {
+                    auto nullvector = std::vector<uint64_t>();
+                    message reply_msg {REPLY, MCAST_ADDR, DATA_PORT, NAME, nullvector};
+                    std::string reply_msg_str = create_message(reply_msg);
+                    send_data_to(poll_desc[CTRL].fd, &receiver_addr, reply_msg_str.c_str(), reply_msg_str.length());
+                }
             }
         }
     }
