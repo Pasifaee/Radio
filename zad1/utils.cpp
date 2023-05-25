@@ -36,3 +36,194 @@ void get_options(bool sender, const int ac, char* av[], addr_t* address, port_t*
     }
     po::notify(vm);
 }
+
+/** Creating messages **/
+
+std::string msg_lookup() {
+    return LOOKUP_STR + '\n';
+}
+
+std::string msg_reply(const addr_t& mcast_addr, port_t data_port, const std::string& name) {
+    return REPLY_STR + ' ' + mcast_addr + ' ' + std::to_string(data_port) + ' ' + name + '\n';
+}
+
+std::string msg_rexmit(std::vector<uint64_t> packages) {
+    if (packages.empty()) {
+        fatal("Won't send a re-exmit request for zero packages\n");
+    }
+    std::string msg = REXMIT_STR + ' ' + std::to_string(packages[0]);
+    for (auto pkg : packages) {
+        msg += ", " + std::to_string(pkg);
+    }
+    msg += '\n';
+
+    return msg;
+}
+
+std::string msg_create(message msg) {
+    std::string fail_msg = "";
+    switch (msg.msg_type) {
+        case LOOKUP:
+            return msg_lookup();
+        case REPLY:
+            return msg_reply(msg.mcast_addr, msg.data_port, msg.name);
+        case REXMIT:
+            return msg_rexmit(msg.packages);
+        case INCORRECT:
+            fatal("Won't' create a message with type INCORRECT\n");
+            return fail_msg;
+    }
+}
+
+/** Parsing messages **/
+
+bool valid_chars(std::string s) {
+    for (auto c : s) {
+        if (c < 32 || c > 127)
+            return false;
+    }
+    return true;
+}
+
+/**
+ * Splits given string into parts using a delimiter.
+ * Doesn't treat delimiter in the beginning of the string as delimiter.
+ * If 2 delimiters are adjacent, treats first one as delimiter and second one as normal character.
+ */
+std::vector<std::string> split(std::string s, char delimiter) {
+    auto res = std::vector<std::string>();
+    std::string tmp;
+    size_t i = 0;
+    bool just_split = false;
+    do {
+        if (i > 0 && s[i] == delimiter && !just_split) {
+            std::string new_str = tmp;
+            res.push_back(new_str);
+            tmp.clear();
+            just_split = true;
+        } else {
+            tmp += s[i];
+            just_split = false;
+        }
+        i++;
+    } while (i < s.length());
+
+    if (!tmp.empty())
+        res.push_back(tmp);
+
+    return res;
+}
+
+/**
+ * Normalizes a string with list of packages.
+ * @return String with removed spaces and newline if input is valid. Otherwise, an empty string.
+ */
+std::string normalize_packages(std::string list) {
+    std::string list_normalized;
+    std::string fail = "";
+
+    bool last_was_comma = true; // True if we more recently encountered a comma than a digit.
+    for (size_t i = 0; i < list.length(); i++) {
+        if (i == list.length() - 1 && list[i] == '\n')
+            return list_normalized;
+
+        if (std::isdigit(list[i])) {
+            list_normalized += list[i];
+            last_was_comma = false;
+        } else if (list[i] == ',') {
+            list_normalized += list[i];
+            last_was_comma = true;
+        } else if (list[i] == ' ') {
+            if (i == 0 || i == list.length() - 1)
+                continue;
+            if (std::isdigit(list[i+1]) && !last_was_comma)
+                return fail;
+            if (list[i+1] == ',' && last_was_comma)
+                return fail;
+        } else { // We encountered an illegal character.
+            return fail;
+        }
+    }
+    return list_normalized;
+}
+
+message parse_lookup(const std::string& msg_str) {
+    message msg{};
+    message fail_msg{};
+    fail_msg.msg_type = INCORRECT;
+
+    if (msg_str == LOOKUP_STR) {
+        msg.msg_type = LOOKUP;
+        return msg;
+    }
+
+    return fail_msg;
+}
+
+message parse_reply(const std::string& msg_str, std::vector<std::string> msg_parts) {
+    message msg{};
+    msg.msg_type = REPLY;
+    message fail_msg{};
+    fail_msg.msg_type = INCORRECT;
+
+    if (msg_parts.size() >= 4)
+        return fail_msg;
+
+    // Check if address argument is a valid multicast dotted address.
+    in_addr *tmp;
+    if (!inet_aton(msg_parts[1].c_str(), (in_addr*) tmp))
+        return fail_msg;
+
+    if (!valid_port(msg_parts[2].c_str()))
+        return fail_msg;
+
+    size_t first_args_len = msg_parts[0].length() + msg_parts[1].length() + msg_parts[2].length() + 3;
+    std::string name = msg_str.substr(first_args_len);
+
+    msg.mcast_addr = msg_parts[1];
+    msg.data_port = read_port(msg_parts[2].c_str());
+    msg.name = name;
+    return msg;
+}
+
+message parse_rexmit(const std::string& msg_str) {
+    message msg{};
+    msg.msg_type = REXMIT;
+    message fail_msg{};
+    fail_msg.msg_type = INCORRECT;
+
+    std::string packages_list = msg_str.substr((REXMIT_STR).length());
+    packages_list = normalize_packages(packages_list);
+    auto packages_str = split(packages_list, ',');
+    auto packages = std::vector<uint64_t>();
+
+    for (auto pkg_str : packages_str) {
+        errno = 0;
+        packages.push_back(strtoull(pkg_str.c_str(), nullptr, 10));
+        if (errno != 0)
+            return fail_msg;
+    }
+
+    msg.packages = packages;
+    return msg;
+}
+
+// TODO: check if message contains illegal characters
+message parse_message(std::string msg_str) {
+    message fail_msg{};
+    fail_msg.msg_type = INCORRECT;
+
+    if (msg_str.back() != '\n' || !valid_chars(msg_str))
+        return fail_msg;
+
+    auto msg_parts = split(msg_str, ' ');
+    if (msg_parts[0] == LOOKUP_STR) {
+        return parse_lookup(msg_str);
+    } else if (msg_parts[0] == REPLY_STR) {
+        return parse_reply(msg_str, msg_parts);
+    } else if (msg_parts[0] == REXMIT_STR) {
+        return parse_rexmit(msg_str);
+    } else {
+        return fail_msg;
+    }
+}

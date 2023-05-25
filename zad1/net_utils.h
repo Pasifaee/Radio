@@ -22,7 +22,18 @@
 // Constants.
 #define NO_FLAGS 0
 
-inline static uint16_t read_port(char *string) {
+inline static bool valid_port(const char *string) {
+    errno = 0;
+    unsigned long port = strtoul(string, NULL, 10);
+    if (errno != 0)
+        return false;
+    if (port > UINT16_MAX)
+        return false;
+
+    return true;
+}
+
+inline static uint16_t read_port(const char *string) {
     errno = 0;
     unsigned long port = strtoul(string, NULL, 10);
     PRINT_ERRNO();
