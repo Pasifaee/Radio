@@ -4,12 +4,13 @@ namespace po = boost::program_options;
 
 /** Command line options parsing **/
 
-void get_options(bool sender, const int ac, char* av[], addr_t* address, port_t* port, size_t* bsize, size_t* psize, std::string* name) {
+void get_options(bool sender, const int ac, char* av[], addr_t* address, port_t* data_port, port_t* ctrl_port, size_t* bsize, size_t* psize, std::string* name) {
     // Declare the supported options.
     po::options_description desc("Allowed options");
     desc.add_options()
             ("help", "produce help message")
-            ("port,P", po::value<port_t>(port)->default_value(DFLT_PORT), "specify receiver's port for communication")
+            ("audio-port,P", po::value<port_t>(data_port)->default_value(DFLT_DATA_PORT), "specify port for audio transfer")
+            ("control-port,C", po::value<port_t>(ctrl_port)->default_value(DFLT_CTRL_PORT), "specify port for control protocol")
             ;
     if (sender) {
         desc.add_options()

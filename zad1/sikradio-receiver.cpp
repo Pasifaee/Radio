@@ -4,12 +4,13 @@
 #include "net_utils.h"
 #include "utils.h"
 
-#define IN 0
-#define OUT 1
+#define AUDIO_IN 0
+#define STDOUT 1
 
 /* Program arguments. */
 addr_t MCAST_ADDR; // IPv4 sender's address.
-port_t DATA_PORT; // Receiver's port.
+port_t DATA_PORT; // Port for audio transfer.
+port_t CTRL_PORT; // Port for communication with control protocol.
 size_t BSIZE; // Buffer size.
 
 size_t PSIZE; // Size of audio data in last received package.
@@ -132,11 +133,11 @@ void init_connection(struct pollfd* poll_desc, struct ip_mreq* ip_mreq) {
     CHECK_ERRNO(setsockopt(audio_socket, IPPROTO_IP, IP_ADD_MEMBERSHIP, (void *) ip_mreq, sizeof *ip_mreq));
     bind_socket(audio_socket, DATA_PORT);
 
-    poll_desc[IN].fd = audio_socket;
-    poll_desc[IN].events = POLLIN;
+    poll_desc[AUDIO_IN].fd = audio_socket;
+    poll_desc[AUDIO_IN].events = POLLIN;
 
-    poll_desc[OUT].fd = STDOUT_FILENO;
-    poll_desc[OUT].events = 0;
+    poll_desc[STDOUT].fd = STDOUT_FILENO;
+    poll_desc[STDOUT].events = 0;
 }
 
 void transmit_music() {
@@ -149,8 +150,8 @@ void transmit_music() {
 
     int timeout = -1; // Wait indefinitely.
     do {
-        poll_desc[IN].revents = 0;
-        poll_desc[OUT].revents = 0;
+        poll_desc[AUDIO_IN].revents = 0;
+        poll_desc[STDOUT].revents = 0;
 
         int poll_status = poll(poll_desc, 2, timeout);
         if (poll_status == -1) {
@@ -159,13 +160,13 @@ void transmit_music() {
             else
                 PRINT_ERRNO();
         } else {
-            if (poll_desc[IN].revents & POLLIN) {
-                size_t package_size = receive_data(poll_desc[IN].fd, start_buffer, BSIZE + 1);
+            if (poll_desc[AUDIO_IN].revents & POLLIN) {
+                size_t package_size = receive_data(poll_desc[AUDIO_IN].fd, start_buffer, BSIZE + 1);
                 if (package_size > 0 && (size_t) package_size - 2 * sizeof (uint64_t) <= BSIZE) {
                     handle_new_package(package_size, start_buffer, buffer);
                 }
             }
-            if (poll_desc[OUT].revents & POLLOUT) {
+            if (poll_desc[STDOUT].revents & POLLOUT) {
                 size_t eff_buffer_size = BSIZE - BSIZE % PSIZE;
                 ssize_t bytes_written = write(STDOUT_FILENO, buffer + (play_byte % eff_buffer_size), PSIZE);
                 assert(bytes_written > 0 && (size_t) bytes_written == PSIZE);
@@ -174,17 +175,17 @@ void transmit_music() {
             }
         }
 
-        poll_desc[OUT].events = playing && play_byte < write_byte ? POLLOUT : 0;
+        poll_desc[STDOUT].events = playing && play_byte < write_byte ? POLLOUT : 0;
     } while (true);
 
     // Disconnecting from multicast address.
-    CHECK_ERRNO(setsockopt(poll_desc[IN].fd, IPPROTO_IP, IP_DROP_MEMBERSHIP, (void *) &ip_mreq, sizeof(ip_mreq)));
+    CHECK_ERRNO(setsockopt(poll_desc[AUDIO_IN].fd, IPPROTO_IP, IP_DROP_MEMBERSHIP, (void *) &ip_mreq, sizeof(ip_mreq)));
 
-    CHECK_ERRNO(close(poll_desc[IN].fd));
+    CHECK_ERRNO(close(poll_desc[AUDIO_IN].fd));
 }
 
 // TODO: check if command line parameters are correct
 int main(int argc, char* argv[]) {
-    get_options(false, argc, argv, &MCAST_ADDR, &DATA_PORT, &BSIZE);
+    get_options(false, argc, argv, &MCAST_ADDR, &DATA_PORT, &CTRL_PORT, &BSIZE);
     transmit_music();
 }

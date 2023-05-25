@@ -9,7 +9,8 @@
 #define MIMUW_SIK_ZAD1_UTILS_H
 
 // Default values.
-#define DFLT_PORT 27924
+#define DFLT_DATA_PORT 27924
+#define DFLT_CTRL_PORT 37924
 #define DFLT_PSIZE 512
 #define DFLT_BSIZE 65536
 #define DFLT_NAME "Nienazwany nadajnik"
@@ -47,6 +48,6 @@ message parse_message(std::string msg_str);
 /**
  * TODO - description
  */
-void get_options(bool sender, int ac, char* av[], addr_t* address, port_t* port, size_t* bsize, size_t* psize = nullptr, std::string* name = nullptr);
+void get_options(bool sender, int ac, char* av[], addr_t* address, port_t* data_port, port_t* ctrl_port, size_t* bsize, size_t* psize = nullptr, std::string* name = nullptr);
 
 #endif //MIMUW_SIK_ZAD1_UTILS_H

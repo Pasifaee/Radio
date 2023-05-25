@@ -1,13 +1,19 @@
 #include <cstdint>
 #include <string>
 #include <unistd.h>
+#include <poll.h>
 #include "utils.h"
+
+/* Descriptors related constants. */
+#define AUDIO_OUT 0
+#define CTRL 1
 
 #define TTL_VALUE     4
 
 /* Program arguments. */
 addr_t MCAST_ADDR; // IPv4 multicast address.
-port_t DATA_PORT; // Receiver's port.
+port_t DATA_PORT; // Port for audio transfer.
+port_t CTRL_PORT; // Port for communication with control protocol.
 size_t PSIZE; // Package size.
 std::string NAME; // Sender's name.
 
@@ -43,16 +49,16 @@ size_t refill_audio_datagram(byte_t* datagram, size_t from) {
     return read_music(datagram + from + 16, PSIZE - from);
 }
 
-int init_connection() {
-    int socket_fd = socket(PF_INET, SOCK_DGRAM, 0);
-    if (socket_fd < 0)
+void init_connection(struct pollfd* poll_desc) {
+    int audio_socket = socket(PF_INET, SOCK_DGRAM, 0); // UDP socket.
+    if (audio_socket < 0)
         PRINT_ERRNO();
 
     // Configuring multicasting.
     int optval = 1;
-    CHECK_ERRNO(setsockopt(socket_fd, SOL_SOCKET, SO_BROADCAST, (void *) &optval, sizeof optval));
+    CHECK_ERRNO(setsockopt(audio_socket, SOL_SOCKET, SO_BROADCAST, (void *) &optval, sizeof optval));
     optval = TTL_VALUE;
-    CHECK_ERRNO(setsockopt(socket_fd, IPPROTO_IP, IP_MULTICAST_TTL, (void *) &optval, sizeof optval));
+    CHECK_ERRNO(setsockopt(audio_socket, IPPROTO_IP, IP_MULTICAST_TTL, (void *) &optval, sizeof optval));
 
     struct sockaddr_in remote_address{};
     remote_address.sin_family = PF_INET;
@@ -61,8 +67,18 @@ int init_connection() {
         fatal("ERROR: inet_aton - invalid multicast address\n");
     }
 
-    connect_socket(socket_fd, &remote_address);
-    return socket_fd;
+    connect_socket(audio_socket, &remote_address);
+
+    poll_desc[AUDIO_OUT].fd = audio_socket;
+    poll_desc[AUDIO_OUT].events = POLLOUT;
+
+    int ctrl_socket = socket(PF_INET, SOCK_DGRAM, 0); // UDP socket.
+    if (ctrl_socket < 0)
+        PRINT_ERRNO();
+    bind_socket(ctrl_socket, CTRL_PORT);
+
+    poll_desc[CTRL].fd = ctrl_socket;
+    poll_desc[CTRL].events = POLLIN;
 }
 
 /**
@@ -70,7 +86,8 @@ int init_connection() {
  * the data in packages of size PSIZE.
  */
 void read_and_send_music() {
-    int audio_socket = init_connection();
+    struct pollfd poll_desc[2];
+    init_connection(poll_desc);
 
     byte_t datagram[PSIZE + 16];
     uint64_t session_id = time(nullptr);
@@ -80,20 +97,20 @@ void read_and_send_music() {
         size_t total_bytes_read = bytes_read;
         while (total_bytes_read < PSIZE) {
             if (bytes_read == 0) {
-                CHECK_ERRNO(close(audio_socket)); // TODO: Fix: getting error "bad file descriptor"
+                CHECK_ERRNO(close(poll_desc[AUDIO_OUT].fd)); // TODO: Fix: getting error "bad file descriptor"
                 exit(0);
             }
             bytes_read = refill_audio_datagram(datagram, total_bytes_read);
             total_bytes_read += bytes_read;
         }
 
-        send_data(audio_socket, datagram, PSIZE + 16); // Multicast audio data.
+        send_data(poll_desc[AUDIO_OUT].fd, datagram, PSIZE + 16); // Multicast audio data.
         first_byte_num += PSIZE;
     }
 }
 
 int main(int argc, char* argv[]) {
-    get_options(true, argc, argv, &MCAST_ADDR, &DATA_PORT, nullptr, &PSIZE, &NAME);
+    get_options(true, argc, argv, &MCAST_ADDR, &DATA_PORT, &CTRL_PORT, nullptr, &PSIZE, &NAME);
 
     read_and_send_music();
 
