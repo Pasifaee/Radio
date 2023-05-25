@@ -26,10 +26,10 @@ struct audio_pack {
     byte_t* audio_data;
 };
 
-enum msg_type {LOOKUP = 0, REPLY = 1, REXMIT = 2, INCORRECT = 3};
+enum message_type {LOOKUP = 0, REPLY = 1, REXMIT = 2, INCORRECT = 3};
 
 struct message {
-    msg_type msg_type;
+    message_type msg_type;
 
     // REPLY parameters.
     addr_t mcast_addr;
@@ -40,7 +40,7 @@ struct message {
     std::vector<uint64_t> packages;
 };
 
-std::string msg_create(message msg);
+std::string create_message(message msg);
 
 message parse_message(std::string msg_str);
 

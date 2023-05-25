@@ -2,6 +2,8 @@
 
 namespace po = boost::program_options;
 
+/** Command line options parsing **/
+
 void get_options(bool sender, const int ac, char* av[], addr_t* address, port_t* port, size_t* bsize, size_t* psize, std::string* name) {
     // Declare the supported options.
     po::options_description desc("Allowed options");
@@ -11,15 +13,15 @@ void get_options(bool sender, const int ac, char* av[], addr_t* address, port_t*
             ;
     if (sender) {
         desc.add_options()
-            ("address,a", po::value<addr_t>(address), "specify receiver's IPv4 address")
-            ("package-size,p", po::value<size_t>(psize)->default_value(DFLT_PSIZE), "set package size")
-            ("name,n", po::value<std::string>(name)->default_value(DFLT_NAME), "set the name of the sender")
-            ;
+                ("address,a", po::value<addr_t>(address), "specify receiver's IPv4 address")
+                ("package-size,p", po::value<size_t>(psize)->default_value(DFLT_PSIZE), "set package size")
+                ("name,n", po::value<std::string>(name)->default_value(DFLT_NAME), "set the name of the sender")
+                ;
     } else { // Receiver.
         desc.add_options()
-            ("address,a", po::value<addr_t>(address), "specify sender's IPv4 address")
-            ("buffer-size,b", po::value<size_t>(bsize)->default_value(DFLT_BSIZE), "set buffer size")
-            ;
+                ("address,a", po::value<addr_t>(address), "specify sender's IPv4 address")
+                ("buffer-size,b", po::value<size_t>(bsize)->default_value(DFLT_BSIZE), "set buffer size")
+                ;
     }
 
     po::variables_map vm;
@@ -60,7 +62,7 @@ std::string msg_rexmit(std::vector<uint64_t> packages) {
     return msg;
 }
 
-std::string msg_create(message msg) {
+std::string create_message(message msg) {
     std::string fail_msg = "";
     switch (msg.msg_type) {
         case LOOKUP:
@@ -79,7 +81,7 @@ std::string msg_create(message msg) {
 
 bool valid_chars(std::string s) {
     for (auto c : s) {
-        if (c < 32 || c > 127)
+        if (c != '\n' && (c < 32 || c > 127))
             return false;
     }
     return true;
@@ -131,6 +133,8 @@ std::string normalize_packages(std::string list) {
             list_normalized += list[i];
             last_was_comma = false;
         } else if (list[i] == ',') {
+            if (last_was_comma)
+                return fail;
             list_normalized += list[i];
             last_was_comma = true;
         } else if (list[i] == ' ') {
@@ -138,12 +142,14 @@ std::string normalize_packages(std::string list) {
                 continue;
             if (std::isdigit(list[i+1]) && !last_was_comma)
                 return fail;
-            if (list[i+1] == ',' && last_was_comma)
-                return fail;
         } else { // We encountered an illegal character.
             return fail;
         }
     }
+
+    if (last_was_comma)
+        return fail;
+
     return list_normalized;
 }
 
@@ -166,7 +172,7 @@ message parse_reply(const std::string& msg_str, std::vector<std::string> msg_par
     message fail_msg{};
     fail_msg.msg_type = INCORRECT;
 
-    if (msg_parts.size() >= 4)
+    if (msg_parts.size() < 4)
         return fail_msg;
 
     // Check if address argument is a valid multicast dotted address.
@@ -178,7 +184,9 @@ message parse_reply(const std::string& msg_str, std::vector<std::string> msg_par
         return fail_msg;
 
     size_t first_args_len = msg_parts[0].length() + msg_parts[1].length() + msg_parts[2].length() + 3;
-    std::string name = msg_str.substr(first_args_len);
+    std::string name = msg_str.substr(first_args_len, msg_str.length() - first_args_len - 1);
+    if (name.empty())
+        return fail_msg;
 
     msg.mcast_addr = msg_parts[1];
     msg.data_port = read_port(msg_parts[2].c_str());
@@ -194,6 +202,8 @@ message parse_rexmit(const std::string& msg_str) {
 
     std::string packages_list = msg_str.substr((REXMIT_STR).length());
     packages_list = normalize_packages(packages_list);
+    if (packages_list.empty())
+        return fail_msg;
     auto packages_str = split(packages_list, ',');
     auto packages = std::vector<uint64_t>();
 
@@ -217,8 +227,8 @@ message parse_message(std::string msg_str) {
         return fail_msg;
 
     auto msg_parts = split(msg_str, ' ');
-    if (msg_parts[0] == LOOKUP_STR) {
-        return parse_lookup(msg_str);
+    if (msg_parts[0] == LOOKUP_STR + '\n') {
+        return parse_lookup(msg_str.substr(0, msg_str.length() - 1));
     } else if (msg_parts[0] == REPLY_STR) {
         return parse_reply(msg_str, msg_parts);
     } else if (msg_parts[0] == REXMIT_STR) {
