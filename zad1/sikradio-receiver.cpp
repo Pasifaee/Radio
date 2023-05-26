@@ -4,11 +4,15 @@
 #include "net_utils.h"
 #include "utils.h"
 
+/* Descriptors related constants. */
+#define N_FDS 3
 #define AUDIO_IN 0
 #define STDOUT 1
+#define CTRL 2
 
 /* Program arguments. */
 addr_t MCAST_ADDR; // IPv4 sender's address.
+addr_t DISCOVER_ADDR; // Address for looking up radio stations.
 port_t DATA_PORT; // Port for audio transfer.
 port_t CTRL_PORT; // Port for communication with control protocol.
 size_t BSIZE; // Buffer size.
@@ -138,13 +142,25 @@ void init_connection(struct pollfd* poll_desc, struct ip_mreq* ip_mreq) {
 
     poll_desc[STDOUT].fd = STDOUT_FILENO;
     poll_desc[STDOUT].events = 0;
+
+    int ctrl_socket = socket(PF_INET, SOCK_DGRAM, 0); // UDP socket.
+    if (ctrl_socket < 0)
+        PRINT_ERRNO();
+
+    int optval = 1;
+    CHECK_ERRNO(setsockopt(ctrl_socket, SOL_SOCKET, SO_BROADCAST, (void *) &optval, sizeof optval));
+
+    bind_socket(ctrl_socket, CTRL_PORT);
+
+    poll_desc[CTRL].fd = ctrl_socket;
+    poll_desc[CTRL].events = POLLIN | POLLOUT;
 }
 
 void transmit_music() {
     byte_t start_buffer[BSIZE + 1];
     byte_t buffer[BSIZE];
 
-    struct pollfd poll_desc[2];
+    struct pollfd poll_desc[N_FDS];
     struct ip_mreq ip_mreq{};
     init_connection(poll_desc, &ip_mreq);
 
@@ -152,8 +168,9 @@ void transmit_music() {
     while (true) {
         poll_desc[AUDIO_IN].revents = 0;
         poll_desc[STDOUT].revents = 0;
+        poll_desc[CTRL].revents = 0;
 
-        int poll_status = poll(poll_desc, 2, timeout);
+        int poll_status = poll(poll_desc, N_FDS, timeout);
         if (poll_status == -1) {
             if (errno == EINTR)
                 std::cerr << "Interrupted system call\n";
@@ -172,6 +189,27 @@ void transmit_music() {
                 assert(bytes_written > 0 && (size_t) bytes_written == PSIZE);
 
                 play_byte += PSIZE;
+            }
+            if (poll_desc[CTRL].revents & POLLIN) {
+                // Listen for REPLY messages.
+                char msg_str[MSG_BUFF_SIZE];
+
+                struct sockaddr_in sender_addr{};
+                size_t msg_len = receive_data_from(poll_desc[CTRL].fd, &sender_addr, msg_str, MSG_BUFF_SIZE - 1);
+                msg_str[msg_len] = 0;
+                message msg = parse_message(std::string(msg_str));
+
+                if (msg.msg_type == REPLY) {
+                    ; // TODO
+                }
+            }
+            if (poll_desc[CTRL].revents & POLLOUT) { // TODO - poll_desc[CTRL].events should be dependent on the timer (always POLLIN, sometimes POLLIN | POLLOUT)
+                // Send LOOKUP message.
+                sockaddr_in discover_addr = get_address(DISCOVER_ADDR.data(), CTRL_PORT);
+                message lookup_msg{};
+                lookup_msg.msg_type = LOOKUP;
+                std::string lookup_msg_str = get_message_str(lookup_msg);
+                send_data_to(poll_desc[CTRL].fd, &discover_addr, lookup_msg_str.c_str(), lookup_msg_str.length());
             }
         }
 

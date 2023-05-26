@@ -14,13 +14,13 @@ void get_options(bool sender, const int ac, char* av[], addr_t* address, port_t*
             ;
     if (sender) {
         desc.add_options()
-                ("address,a", po::value<addr_t>(address), "specify receiver's IPv4 address")
+                ("multicast-addr,a", po::value<addr_t>(address), "specify multicast IPv4 address")
                 ("package-size,p", po::value<size_t>(psize)->default_value(DFLT_PSIZE), "set package size")
                 ("name,n", po::value<std::string>(name)->default_value(DFLT_NAME), "set the name of the sender")
                 ;
     } else { // Receiver.
         desc.add_options()
-                ("address,a", po::value<addr_t>(address), "specify sender's IPv4 address")
+                ("discover-addr,d", po::value<addr_t>(address)->default_value(DFLT_DISCOVER_ADDR), "specify IPv4 address for looking up radio stations")
                 ("buffer-size,b", po::value<size_t>(bsize)->default_value(DFLT_BSIZE), "set buffer size")
                 ;
     }
@@ -63,7 +63,7 @@ std::string msg_rexmit(std::vector<uint64_t> packages) {
     return msg;
 }
 
-std::string create_message(message msg) {
+std::string get_message_str(message msg) {
     std::string fail_msg = "";
     switch (msg.msg_type) {
         case LOOKUP:
@@ -74,8 +74,8 @@ std::string create_message(message msg) {
             return msg_rexmit(msg.packages);
         case INCORRECT:
             fatal("Won't' create a message with type INCORRECT\n");
-            return fail_msg;
     }
+    return fail_msg;
 }
 
 /** Parsing messages **/
@@ -96,7 +96,7 @@ std::string trim(const std::string& s)
 
 bool valid_chars(std::string s) {
     for (auto c : s) {
-        if (c != '\n' && (c < 32 || c > 127))
+        if (c != '\n' && c < 32)
             return false;
     }
     return true;

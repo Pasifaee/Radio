@@ -9,6 +9,7 @@
 #define MIMUW_SIK_ZAD1_UTILS_H
 
 // Default values.
+#define DFLT_DISCOVER_ADDR "255.255.255.255"
 #define DFLT_DATA_PORT 27924
 #define DFLT_CTRL_PORT 37924
 #define DFLT_PSIZE 512
@@ -17,6 +18,7 @@
 
 // Constants.
 #define NO_FLAGS 0
+#define MSG_BUFF_SIZE 1024
 #define LOOKUP_STR (std::string) "ZERO_SEVEN_COME_IN"
 #define REPLY_STR (std::string) "BOREWICZ_HERE"
 #define REXMIT_STR (std::string) "LOUDER_PLEASE"
@@ -41,7 +43,7 @@ struct message {
     std::vector<uint64_t> packages;
 };
 
-std::string create_message(message msg);
+std::string get_message_str(message msg);
 
 message parse_message(std::string msg_str);
 

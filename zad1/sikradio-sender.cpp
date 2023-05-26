@@ -5,11 +5,11 @@
 #include "utils.h"
 
 /* Descriptors related constants. */
+#define N_FDS 2
 #define STDIN 0
 #define CTRL 1
 
 #define TTL_VALUE     4
-#define MSG_BUFF_SIZE 1024
 
 /* Program arguments. */
 addr_t MCAST_ADDR; // IPv4 multicast address.
@@ -107,7 +107,7 @@ int init_connection(struct pollfd* poll_desc) {
 int main(int argc, char* argv[]) {
     get_options(true, argc, argv, &MCAST_ADDR, &DATA_PORT, &CTRL_PORT, nullptr, &PSIZE, &NAME);
 
-    struct pollfd poll_desc[2];
+    struct pollfd poll_desc[N_FDS];
     int audio_socket_fd = init_connection(poll_desc);
 
     byte_t datagram[PSIZE + 16];
@@ -119,7 +119,7 @@ int main(int argc, char* argv[]) {
         poll_desc[STDIN].revents = 0;
         poll_desc[CTRL].revents = 0;
 
-        int poll_status = poll(poll_desc, 2, timeout);
+        int poll_status = poll(poll_desc, N_FDS, timeout);
         if (poll_status == -1) {
             if (errno == EINTR)
                 std::cerr << "Interrupted system call\n";
@@ -129,19 +129,18 @@ int main(int argc, char* argv[]) {
             if (poll_desc[STDIN].revents & POLLIN) {
                 read_and_send_music(datagram, audio_socket_fd, session_id, first_byte_num);
             }
-            if (poll_desc[CTRL].revents & POLLIN) {
+            if (poll_desc[CTRL].revents & POLLIN) { // TODO: put this in a function
                 char msg_str[MSG_BUFF_SIZE];
 
                 struct sockaddr_in receiver_addr{};
                 size_t msg_len = receive_data_from(poll_desc[CTRL].fd, &receiver_addr, msg_str, MSG_BUFF_SIZE - 1);
                 msg_str[msg_len] = 0;
-
                 message msg = parse_message(std::string(msg_str));
 
                 if (msg.msg_type == LOOKUP) {
                     auto nullvector = std::vector<uint64_t>();
                     message reply_msg {REPLY, MCAST_ADDR, DATA_PORT, NAME, nullvector};
-                    std::string reply_msg_str = create_message(reply_msg);
+                    std::string reply_msg_str = get_message_str(reply_msg);
                     send_data_to(poll_desc[CTRL].fd, &receiver_addr, reply_msg_str.c_str(), reply_msg_str.length());
                 }
             }
