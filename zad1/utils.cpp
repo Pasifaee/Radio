@@ -31,7 +31,7 @@ void get_options(bool sender, const int ac, char* av[], addr_t* address, port_t*
         if (vm.count("help")) {
             std::cout << desc << "\n";
         }
-        if (!vm.count("address"))
+        if (sender && !vm.count("multicast-addr"))
             throw std::runtime_error("Specifying the address with -a option is required");
     } catch (std::exception& e) { // TODO: if this code repeats, make a new function
         std::cerr << "Error: bad program call\n\t" << e.what() << "\n";

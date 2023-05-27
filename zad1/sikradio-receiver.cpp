@@ -11,13 +11,13 @@
 #define CTRL 2
 
 /* Program arguments. */
-addr_t MCAST_ADDR; // IPv4 sender's address.
 addr_t DISCOVER_ADDR; // Address for looking up radio stations.
 port_t DATA_PORT; // Port for audio transfer.
 port_t CTRL_PORT; // Port for communication with control protocol.
 size_t BSIZE; // Buffer size.
 
 size_t PSIZE; // Size of audio data in last received package.
+addr_t MCAST_ADDR = "224.0.0.1"; // IPv4 sender's address. // TODO: remove hardcoded value after debugging
 uint64_t BYTE0;
 uint64_t last_session_id = 0;
 bool playing;
@@ -224,6 +224,6 @@ void transmit_music() {
 
 // TODO: check if command line parameters are correct
 int main(int argc, char* argv[]) {
-    get_options(false, argc, argv, &MCAST_ADDR, &DATA_PORT, &CTRL_PORT, &BSIZE);
+    get_options(false, argc, argv, &DISCOVER_ADDR, &DATA_PORT, &CTRL_PORT, &BSIZE);
     transmit_music();
 }
