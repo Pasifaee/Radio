@@ -73,6 +73,12 @@ inline void reset_timer(timer* timer) {
     gettimeofday(&timer->last_time, nullptr);
 }
 
+inline long int time_diff(timeval end, timeval start) {
+    long int time_diff = (end.tv_sec - start.tv_sec) * 1000; // sec to ms
+    time_diff += (end.tv_usec - start.tv_usec) / 1000; // us to ms
+    return time_diff;
+}
+
 /**
  * Updates the timer and returns the check_time time.
  */
@@ -80,10 +86,7 @@ inline long int check_time(timer* timer) {
     timeval now;
     gettimeofday(&now, nullptr);
 
-    long int time_diff = (now.tv_sec - timer->last_time.tv_sec) * 1000; // sec to ms
-    time_diff += (now.tv_usec - timer->last_time.tv_usec) / 1000; // us to ms
-
-    timer->remaining -= time_diff;
+    timer->remaining -= time_diff(now, timer->last_time);
     timer->last_time = now;
     return timer->remaining;
 }

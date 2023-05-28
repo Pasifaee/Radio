@@ -12,6 +12,7 @@
 
 /* Other constants. */
 #define LOOKUP_FREQ 5000 // Frequency of sending lookup messages in miliseconds.
+#define STATION_LOST_T 10000 // Time after which a radio station is considered to be lost, if doesn't respond, in miliseconds.
 
 /* Program arguments. */
 addr_t DISCOVER_ADDR; // Address for looking up radio stations.
@@ -178,6 +179,19 @@ void handle_message(pollfd* poll_desc) {
     }
 }
 
+void update_map() {
+    timeval now;
+    gettimeofday(&now, nullptr);
+    auto end = radio_stations.end();
+    for (auto it = radio_stations.begin(); it != end; ) {
+        if (time_diff(now, it->second.last_reply) > STATION_LOST_T) {
+            it = radio_stations.erase(it);
+        } else {
+            it++;
+        }
+    }
+}
+
 void init_connection(struct pollfd* poll_desc, struct ip_mreq* ip_mreq) {
     int audio_socket = socket(PF_INET, SOCK_DGRAM, 0);
     if (audio_socket < 0)
@@ -233,6 +247,7 @@ void transmit_music() {
         } else {
             if (poll_desc[CTRL].revents & POLLOUT) {
                 send_lookup_msg(poll_desc, &lookup_timer);
+                update_map();
             }
             if (poll_desc[CTRL].revents & POLLIN) {
                 handle_message(poll_desc);
