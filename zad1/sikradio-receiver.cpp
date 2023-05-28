@@ -10,6 +10,9 @@
 #define STDOUT 1
 #define CTRL 2
 
+/* Other constants. */
+#define LOOKUP_FREQ 5000 // Frequency of sending lookup messages in miliseconds.
+
 /* Program arguments. */
 addr_t DISCOVER_ADDR; // Address for looking up radio stations.
 port_t DATA_PORT; // Port for audio transfer.
@@ -162,13 +165,16 @@ void transmit_music() {
     struct ip_mreq ip_mreq{};
     init_connection(poll_desc, &ip_mreq);
 
-    int timeout = -1; // Wait indefinitely.
+    timer lookup_timer = new_timer(LOOKUP_FREQ);
     while (true) {
         poll_desc[AUDIO_IN].revents = 0;
         poll_desc[STDOUT].revents = 0;
         poll_desc[CTRL].revents = 0;
 
-        int poll_status = poll(poll_desc, N_FDS, timeout);
+        int poll_status = poll(poll_desc, N_FDS, check_time(&lookup_timer));
+        if (check_time(&lookup_timer) <= 0) { // Time to send a lookup message.
+            poll_desc[CTRL].events = POLLIN | POLLOUT;
+        }
         if (poll_status == -1) {
             if (errno == EINTR)
                 std::cerr << "Interrupted system call\n";
@@ -183,7 +189,9 @@ void transmit_music() {
                 std::string lookup_msg_str = get_message_str(lookup_msg);
                 send_data_to(poll_desc[CTRL].fd, &discover_addr, lookup_msg_str.c_str(), lookup_msg_str.length());
 
-                play_byte += PSIZE;
+                // Wait before sending next lookup message.
+                reset_timer(&lookup_timer);
+                poll_desc[CTRL].events = POLLIN;
             }
             if (poll_desc[CTRL].revents & POLLIN) {
                 // Listen for REPLY messages.
@@ -198,13 +206,18 @@ void transmit_music() {
                     ; // TODO
                 }
             }
-            if (poll_desc[CTRL].revents & POLLOUT) { // TODO - poll_desc[CTRL].events should be dependent on the timer (always POLLIN, sometimes POLLIN | POLLOUT)
-                // Send LOOKUP message.
-                sockaddr_in discover_addr = get_address(DISCOVER_ADDR.data(), CTRL_PORT);
-                message lookup_msg{};
-                lookup_msg.msg_type = LOOKUP;
-                std::string lookup_msg_str = get_message_str(lookup_msg);
-                send_data_to(poll_desc[CTRL].fd, &discover_addr, lookup_msg_str.c_str(), lookup_msg_str.length());
+            if (poll_desc[AUDIO_IN].revents & POLLIN) {
+                size_t package_size = receive_data(poll_desc[AUDIO_IN].fd, start_buffer, BSIZE + 1);
+                if (package_size > 0 && (size_t) package_size - 2 * sizeof (uint64_t) <= BSIZE) {
+                    handle_new_package(package_size, start_buffer, buffer);
+                }
+            }
+            if (poll_desc[STDOUT].revents & POLLOUT) {
+                size_t eff_buffer_size = BSIZE - BSIZE % PSIZE;
+                ssize_t bytes_written = write(STDOUT_FILENO, buffer + (play_byte % eff_buffer_size), PSIZE);
+                assert(bytes_written > 0 && (size_t) bytes_written == PSIZE);
+
+                play_byte += PSIZE;
             }
         }
 
