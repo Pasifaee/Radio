@@ -93,6 +93,9 @@ int init_connection(struct pollfd* poll_desc) {
     int ctrl_socket = socket(PF_INET, SOCK_DGRAM, 0); // UDP socket.
     if (ctrl_socket < 0)
         PRINT_ERRNO();
+    optval = 1;
+    setsockopt(ctrl_socket, SOL_SOCKET, SO_REUSEPORT, &optval, sizeof(optval));
+
     bind_socket(ctrl_socket, CTRL_PORT);
 
     poll_desc[CTRL].fd = ctrl_socket;
