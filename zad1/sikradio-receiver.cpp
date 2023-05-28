@@ -157,7 +157,9 @@ void send_lookup_msg(pollfd* poll_desc, timer* lookup_timer) {
     poll_desc[CTRL].events = POLLIN;
 }
 
-void handle_message(pollfd* poll_desc) {
+void connect_to_station(int audio_socket, struct ip_mreq* ip_mreq, std::string mcast_addr, port_t data_port);
+
+void handle_message(pollfd* poll_desc, struct ip_mreq* ip_mreq) {
     // Listen for REPLY messages.
     char msg_str[MSG_BUFF_SIZE];
 
@@ -173,6 +175,7 @@ void handle_message(pollfd* poll_desc) {
         auto r = radio_stations.find(sender_addr);
         if (r == radio_stations.end()) {
             radio_stations.insert({sender_addr, radio_station{msg.name, msg.mcast_addr, msg.data_port, now}});
+            connect_to_station(poll_desc[AUDIO_IN].fd, ip_mreq, msg.mcast_addr, msg.data_port); // TODO: this is debug version
         } else {
             r->second.last_reply = now;
         }
@@ -192,18 +195,31 @@ void update_map() {
     }
 }
 
-void init_connection(struct pollfd* poll_desc, struct ip_mreq* ip_mreq) {
-    int audio_socket = socket(PF_INET, SOCK_DGRAM, 0);
-    if (audio_socket < 0)
-        PRINT_ERRNO();
+void connect_to_station(int audio_socket, struct ip_mreq* ip_mreq, std::string mcast_addr, port_t data_port) {
+    MCAST_ADDR = mcast_addr;
+    DATA_PORT = data_port;
 
-    // Connecting to multicast address.
     ip_mreq->imr_interface.s_addr = htonl(INADDR_ANY);
     if (inet_aton(MCAST_ADDR.c_str(), &ip_mreq->imr_multiaddr) == 0) {
         fatal("inet_aton - invalid multicast address\n");
     }
     CHECK_ERRNO(setsockopt(audio_socket, IPPROTO_IP, IP_ADD_MEMBERSHIP, (void *) ip_mreq, sizeof *ip_mreq));
     bind_socket(audio_socket, DATA_PORT);
+}
+
+void disconnect_from_station(int audio_socket, struct ip_mreq* ip_mreq) {
+    CHECK_ERRNO(setsockopt(audio_socket, IPPROTO_IP, IP_DROP_MEMBERSHIP, (void *) &ip_mreq, sizeof(ip_mreq)));
+}
+
+void switch_to_station(int audio_socket, struct ip_mreq* ip_mreq, std::string mcast_addr, port_t data_port) {
+    disconnect_from_station(audio_socket, ip_mreq);
+    connect_to_station(audio_socket, ip_mreq, mcast_addr, data_port);
+}
+
+void init_connection(struct pollfd* poll_desc, struct ip_mreq* ip_mreq) {
+    int audio_socket = socket(PF_INET, SOCK_DGRAM, 0);
+    if (audio_socket < 0)
+        PRINT_ERRNO();
 
     poll_desc[AUDIO_IN].fd = audio_socket;
     poll_desc[AUDIO_IN].events = POLLIN;
@@ -250,7 +266,7 @@ void transmit_music() {
                 update_map();
             }
             if (poll_desc[CTRL].revents & POLLIN) {
-                handle_message(poll_desc);
+                handle_message(poll_desc, &ip_mreq);
             }
             if (poll_desc[AUDIO_IN].revents & POLLIN) {
                 handle_new_package(poll_desc, buffer);
