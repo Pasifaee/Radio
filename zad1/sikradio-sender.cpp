@@ -62,7 +62,13 @@ void read_and_send_music(byte_t* datagram, int send_fd, uint64_t session_id, uin
         total_bytes_read += bytes_read;
     }
 
-    send_data(send_fd, datagram, PSIZE + 16); // Multicast audio data.
+    struct sockaddr_in mcast_address{};
+    mcast_address.sin_family = PF_INET;
+    mcast_address.sin_port = htons(DATA_PORT);
+    if (inet_aton(MCAST_ADDR.c_str(), &mcast_address.sin_addr) == 0) {
+        fatal("ERROR: inet_aton - invalid multicast address\n");
+    }
+    send_data_to(send_fd, &mcast_address, datagram, PSIZE + 16); // Multicast audio data.
     first_byte_num += PSIZE;
 }
 
@@ -80,15 +86,6 @@ int init_connection(struct pollfd* poll_desc) {
     CHECK_ERRNO(setsockopt(audio_socket_fd, SOL_SOCKET, SO_BROADCAST, (void *) &optval, sizeof optval));
     optval = TTL_VALUE;
     CHECK_ERRNO(setsockopt(audio_socket_fd, IPPROTO_IP, IP_MULTICAST_TTL, (void *) &optval, sizeof optval));
-
-    struct sockaddr_in remote_address{};
-    remote_address.sin_family = PF_INET;
-    remote_address.sin_port = htons(DATA_PORT);
-    if (inet_aton(MCAST_ADDR.c_str(), &remote_address.sin_addr) == 0) {
-        fatal("ERROR: inet_aton - invalid multicast address\n");
-    }
-
-    connect_socket(audio_socket_fd, &remote_address);
 
     poll_desc[STDIN].fd = STDIN_FILENO;
     poll_desc[STDIN].events = POLLIN;

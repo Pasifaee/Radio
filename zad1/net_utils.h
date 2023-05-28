@@ -68,7 +68,7 @@ inline static char *get_ip_from_socket(int socket_fd) {
     return get_ip(&address);
 }
 
-inline static struct sockaddr_in get_address(char *host, uint16_t port) {
+inline static struct sockaddr_in get_udp_address(char *host, uint16_t port) {
     struct addrinfo hints;
     memset(&hints, 0, sizeof(struct addrinfo));
     hints.ai_family = AF_INET; // IPv4

@@ -150,8 +150,6 @@ void init_connection(struct pollfd* poll_desc, struct ip_mreq* ip_mreq) {
     int optval = 1;
     CHECK_ERRNO(setsockopt(ctrl_socket, SOL_SOCKET, SO_BROADCAST, (void *) &optval, sizeof optval));
 
-    bind_socket(ctrl_socket, CTRL_PORT);
-
     poll_desc[CTRL].fd = ctrl_socket;
     poll_desc[CTRL].events = POLLIN | POLLOUT;
 }
@@ -177,16 +175,13 @@ void transmit_music() {
             else
                 PRINT_ERRNO();
         } else {
-            if (poll_desc[AUDIO_IN].revents & POLLIN) {
-                size_t package_size = receive_data(poll_desc[AUDIO_IN].fd, start_buffer, BSIZE + 1);
-                if (package_size > 0 && (size_t) package_size - 2 * sizeof (uint64_t) <= BSIZE) {
-                    handle_new_package(package_size, start_buffer, buffer);
-                }
-            }
-            if (poll_desc[STDOUT].revents & POLLOUT) {
-                size_t eff_buffer_size = BSIZE - BSIZE % PSIZE;
-                ssize_t bytes_written = write(STDOUT_FILENO, buffer + (play_byte % eff_buffer_size), PSIZE);
-                assert(bytes_written > 0 && (size_t) bytes_written == PSIZE);
+            if (poll_desc[CTRL].revents & POLLOUT) { // TODO - poll_desc[CTRL].events should be dependent on the timer (always POLLIN, sometimes POLLIN | POLLOUT)
+                // Send LOOKUP message.
+                sockaddr_in discover_addr = get_udp_address(DISCOVER_ADDR.data(), CTRL_PORT);
+                message lookup_msg{};
+                lookup_msg.msg_type = LOOKUP;
+                std::string lookup_msg_str = get_message_str(lookup_msg);
+                send_data_to(poll_desc[CTRL].fd, &discover_addr, lookup_msg_str.c_str(), lookup_msg_str.length());
 
                 play_byte += PSIZE;
             }
