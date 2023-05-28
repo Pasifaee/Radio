@@ -2,6 +2,7 @@
 #include <string>
 #include <iostream>
 #include <stdexcept>
+#include <sys/time.h>
 #include <boost/program_options.hpp>
 #include "net_utils.h"
 
@@ -46,6 +47,38 @@ struct message {
 std::string get_message_str(message msg);
 
 message parse_message(std::string msg_str);
+
+struct timer {
+    const long int base;
+    long int remaining; // Remaining time in miliseconds.
+    timeval last_time;
+};
+
+inline timer new_timer(long int base) {
+    timeval now;
+    gettimeofday(&now, nullptr);
+    return timer {base, base, now};
+}
+
+inline void reset_timer(timer* timer) {
+    timer->remaining = timer->base;
+    gettimeofday(&timer->last_time, nullptr);
+}
+
+/**
+ * Updates the timer and returns the check_time time.
+ */
+inline long int check_time(timer* timer) {
+    timeval now;
+    gettimeofday(&now, nullptr);
+
+    long int time_diff = (now.tv_sec - timer->last_time.tv_sec) * 1000; // sec to ms
+    time_diff += (now.tv_usec - timer->last_time.tv_usec) / 1000; // us to ms
+
+    timer->remaining -= time_diff;
+    timer->last_time = now;
+    return timer->remaining;
+}
 
 /**
  * TODO - description
