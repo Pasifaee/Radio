@@ -26,6 +26,8 @@ uint64_t last_session_id = 0;
 bool playing;
 std::set<uint64_t> missing;
 
+std::map<sockaddr_in, radio_station> radio_stations;
+
 // Important: ordering from byte0! (byte0 <-> 0)
 uint64_t play_byte; // Number of first byte of the package that's gonna be transmitted to stdout next.
 uint64_t write_byte; // Number of the last written byte + 1.
@@ -171,7 +173,7 @@ void transmit_music() {
         poll_desc[STDOUT].revents = 0;
         poll_desc[CTRL].revents = 0;
 
-        int poll_status = poll(poll_desc, N_FDS, check_time(&lookup_timer));
+        int poll_status = poll(poll_desc, N_FDS, (int) check_time(&lookup_timer));
         if (check_time(&lookup_timer) <= 0) { // Time to send a lookup message.
             poll_desc[CTRL].events = POLLIN | POLLOUT;
         }
@@ -203,7 +205,15 @@ void transmit_music() {
                 message msg = parse_message(std::string(msg_str));
 
                 if (msg.msg_type == REPLY) {
-                    ; // TODO
+                    timeval now;
+                    gettimeofday(&now, nullptr);
+
+                    auto r = radio_stations.find(sender_addr);
+                    if (r == radio_stations.end()) {
+                        radio_stations.insert({sender_addr, radio_station{msg.name, msg.mcast_addr, msg.data_port, now}});
+                    } else {
+                        r->second.last_reply = now;
+                    }
                 }
             }
             if (poll_desc[AUDIO_IN].revents & POLLIN) {

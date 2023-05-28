@@ -48,6 +48,14 @@ std::string get_message_str(message msg);
 
 message parse_message(std::string msg_str);
 
+struct radio_station {
+    const std::string name;
+    const addr_t mcast_addr;
+    const port_t data_port;
+
+    timeval last_reply;
+};
+
 struct timer {
     const long int base;
     long int remaining; // Remaining time in miliseconds.
@@ -78,6 +86,10 @@ inline long int check_time(timer* timer) {
     timer->remaining -= time_diff;
     timer->last_time = now;
     return timer->remaining;
+}
+
+inline bool operator<(const sockaddr_in& l, const sockaddr_in& r) {
+    return (l.sin_addr.s_addr<r.sin_addr.s_addr || (l.sin_addr.s_addr==r.sin_addr.s_addr && l.sin_port<r.sin_port));
 }
 
 /**
