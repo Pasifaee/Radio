@@ -114,7 +114,13 @@ void write_package_to_buffer(const audio_pack package, byte_t* buffer) {
     memcpy(buffer + (package.first_byte_num % eff_buffer_size), package.audio_data, PSIZE);
 }
 
-void handle_new_package(size_t package_size, const byte_t* datagram, byte_t* buffer) {
+void handle_new_package(pollfd* poll_desc, byte_t* buffer) {
+    byte_t datagram[BSIZE + 1];
+    size_t package_size = receive_data(poll_desc[AUDIO_IN].fd, datagram, BSIZE + 1);
+    if (package_size <= 0 || (size_t) package_size - 2 * sizeof (uint64_t) > BSIZE) {
+        return;
+    }
+
     audio_pack package = read_datagram(datagram, package_size);
 
     if (package.session_id > last_session_id) { // New session.
@@ -127,6 +133,49 @@ void handle_new_package(size_t package_size, const byte_t* datagram, byte_t* buf
     // If session_id < last_session_id then ignore_package;
 
     playing |= package.first_byte_num >= BYTE0 + (BSIZE * 3 / 4);
+}
+
+void play(const byte_t* buffer) {
+    size_t eff_buffer_size = BSIZE - BSIZE % PSIZE;
+    ssize_t bytes_written = write(STDOUT_FILENO, buffer + (play_byte % eff_buffer_size), PSIZE);
+    assert(bytes_written > 0 && (size_t) bytes_written == PSIZE);
+
+    play_byte += PSIZE;
+}
+
+void send_lookup_msg(pollfd* poll_desc, timer* lookup_timer) {
+    // Send LOOKUP message.
+    sockaddr_in discover_addr = get_udp_address(DISCOVER_ADDR.data(), CTRL_PORT);
+    message lookup_msg{};
+    lookup_msg.msg_type = LOOKUP;
+    std::string lookup_msg_str = get_message_str(lookup_msg);
+    send_data_to(poll_desc[CTRL].fd, &discover_addr, lookup_msg_str.c_str(), lookup_msg_str.length());
+
+    // Wait before sending next lookup message.
+    reset_timer(lookup_timer);
+    poll_desc[CTRL].events = POLLIN;
+}
+
+void handle_message(pollfd* poll_desc) {
+    // Listen for REPLY messages.
+    char msg_str[MSG_BUFF_SIZE];
+
+    struct sockaddr_in sender_addr{};
+    size_t msg_len = receive_data_from(poll_desc[CTRL].fd, &sender_addr, msg_str, MSG_BUFF_SIZE - 1);
+    msg_str[msg_len] = 0;
+    message msg = parse_message(std::string(msg_str));
+
+    if (msg.msg_type == REPLY) {
+        timeval now;
+        gettimeofday(&now, nullptr);
+
+        auto r = radio_stations.find(sender_addr);
+        if (r == radio_stations.end()) {
+            radio_stations.insert({sender_addr, radio_station{msg.name, msg.mcast_addr, msg.data_port, now}});
+        } else {
+            r->second.last_reply = now;
+        }
+    }
 }
 
 void init_connection(struct pollfd* poll_desc, struct ip_mreq* ip_mreq) {
@@ -160,7 +209,6 @@ void init_connection(struct pollfd* poll_desc, struct ip_mreq* ip_mreq) {
 }
 
 void transmit_music() {
-    byte_t start_buffer[BSIZE + 1];
     byte_t buffer[BSIZE];
 
     struct pollfd poll_desc[N_FDS];
@@ -183,51 +231,17 @@ void transmit_music() {
             else
                 PRINT_ERRNO();
         } else {
-            if (poll_desc[CTRL].revents & POLLOUT) { // TODO - poll_desc[CTRL].events should be dependent on the timer (always POLLIN, sometimes POLLIN | POLLOUT)
-                // Send LOOKUP message.
-                sockaddr_in discover_addr = get_udp_address(DISCOVER_ADDR.data(), CTRL_PORT);
-                message lookup_msg{};
-                lookup_msg.msg_type = LOOKUP;
-                std::string lookup_msg_str = get_message_str(lookup_msg);
-                send_data_to(poll_desc[CTRL].fd, &discover_addr, lookup_msg_str.c_str(), lookup_msg_str.length());
-
-                // Wait before sending next lookup message.
-                reset_timer(&lookup_timer);
-                poll_desc[CTRL].events = POLLIN;
+            if (poll_desc[CTRL].revents & POLLOUT) {
+                send_lookup_msg(poll_desc, &lookup_timer);
             }
             if (poll_desc[CTRL].revents & POLLIN) {
-                // Listen for REPLY messages.
-                char msg_str[MSG_BUFF_SIZE];
-
-                struct sockaddr_in sender_addr{};
-                size_t msg_len = receive_data_from(poll_desc[CTRL].fd, &sender_addr, msg_str, MSG_BUFF_SIZE - 1);
-                msg_str[msg_len] = 0;
-                message msg = parse_message(std::string(msg_str));
-
-                if (msg.msg_type == REPLY) {
-                    timeval now;
-                    gettimeofday(&now, nullptr);
-
-                    auto r = radio_stations.find(sender_addr);
-                    if (r == radio_stations.end()) {
-                        radio_stations.insert({sender_addr, radio_station{msg.name, msg.mcast_addr, msg.data_port, now}});
-                    } else {
-                        r->second.last_reply = now;
-                    }
-                }
+                handle_message(poll_desc);
             }
             if (poll_desc[AUDIO_IN].revents & POLLIN) {
-                size_t package_size = receive_data(poll_desc[AUDIO_IN].fd, start_buffer, BSIZE + 1);
-                if (package_size > 0 && (size_t) package_size - 2 * sizeof (uint64_t) <= BSIZE) {
-                    handle_new_package(package_size, start_buffer, buffer);
-                }
+                handle_new_package(poll_desc, buffer);
             }
             if (poll_desc[STDOUT].revents & POLLOUT) {
-                size_t eff_buffer_size = BSIZE - BSIZE % PSIZE;
-                ssize_t bytes_written = write(STDOUT_FILENO, buffer + (play_byte % eff_buffer_size), PSIZE);
-                assert(bytes_written > 0 && (size_t) bytes_written == PSIZE);
-
-                play_byte += PSIZE;
+                play(buffer);
             }
         }
 
