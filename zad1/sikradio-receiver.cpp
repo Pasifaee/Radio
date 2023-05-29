@@ -4,6 +4,7 @@
 #include <pthread.h>
 #include "net_utils.h"
 #include "utils.h"
+#include "ui.h"
 
 /* Descriptors related constants. */
 #define N_FDS 3
@@ -14,7 +15,6 @@
 /* Other constants. */
 #define LOOKUP_FREQ 5000 // Frequency of sending lookup messages in milliseconds.
 #define STATION_LOST_T 20000 // Time after which a radio station is considered to be lost, if doesn't respond, in milliseconds.
-#define MAX_CONNS 10 // Maximum number of clients using the UI.
 
 /* Program arguments. */
 addr_t DISCOVER_ADDR; // Address for looking up radio stations.
@@ -304,78 +304,11 @@ void transmit_music() {
     CHECK_ERRNO(close(poll_desc[AUDIO_IN].fd));
 }
 
-void* handle_ui(void*) {
-    struct pollfd poll_descriptors[MAX_CONNS];
-    for (int i = 0; i < MAX_CONNS; ++i) {
-        poll_descriptors[i].fd = -1;
-        poll_descriptors[i].events = POLLIN;
-        poll_descriptors[i].revents = 0;
-    }
-
-    // Creating the central socket.
-    poll_descriptors[0].fd = open_socket();
-    bind_socket(poll_descriptors[0].fd, UI_PORT);
-    start_listening(poll_descriptors[0].fd, QUEUE_LENGTH);
-    std::cout << "Listening on ui port " << UI_PORT << "\n";
-
-    while (true) {
-        for (int i = 0; i < MAX_CONNS; ++i) {
-            poll_descriptors[i].revents = 0;
-        }
-
-        int timeout = -1; // Wait indefinetely.
-        int poll_status = poll(poll_descriptors, MAX_CONNS, timeout);
-        if (poll_status == -1 ) {
-            if (errno == EINTR)
-                fprintf(stderr, "Interrupted system call\n");
-            else
-                PRINT_ERRNO();
-        }
-        else {
-            if (!finish && (poll_descriptors[0].revents & POLLIN)) {
-                // New connection.
-                int client_fd = accept_connection(poll_descriptors[0].fd, nullptr);
-
-                bool accepted = false;
-                for (int i = 1; i < MAX_CONNS; ++i) {
-                    if (poll_descriptors[i].fd == -1) {
-                        std::cerr <<"Received new connection " << i << "\n";
-
-                        poll_descriptors[i].fd = client_fd;
-                        poll_descriptors[i].events = POLLIN;
-                        accepted = true;
-                        break;
-                    }
-                }
-                if (!accepted) {
-                    CHECK_ERRNO(close(client_fd));
-                    std::cerr << "Too many clients\n";
-                }
-            }
-            for (int i = 1; i < MAX_CONNS; ++i) {
-                if (poll_descriptors[i].fd != -1 && (poll_descriptors[i].revents & (POLLIN | POLLERR))) {
-                    char key;
-                    ssize_t received_bytes = read(poll_descriptors[i].fd, &key, sizeof (char));
-                    std::cout << "key: " << key << "\n";
-                    if (received_bytes < 0) {
-                        CHECK_ERRNO(close(poll_descriptors[i].fd));
-                        poll_descriptors[i].fd = -1;
-                    } else if (received_bytes == 0) {
-                        std::cerr << "Ending connection " << i << "\n";
-                        CHECK_ERRNO(close(poll_descriptors[i].fd));
-                        poll_descriptors[i].fd = -1;
-                    } else {
-                        ; // TODO
-                    }
-                }
-            }
-        }
-    }
-}
-
 void create_ui_thread() {
     pthread_t thread;
-    CHECK_ERRNO(pthread_create(&thread, nullptr, handle_ui, nullptr));
+    auto* ui_port_ptr = (port_t*) malloc(sizeof(port_t));
+    *ui_port_ptr = UI_PORT;
+    CHECK_ERRNO(pthread_create(&thread, nullptr, run_ui, ui_port_ptr));
     CHECK_ERRNO(pthread_detach(thread));
 }
 
