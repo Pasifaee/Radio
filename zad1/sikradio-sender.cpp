@@ -76,7 +76,7 @@ void read_and_send_music(byte_t* datagram, int send_fd, uint64_t session_id, uin
  * Initializes network connections.
  * @return Descriptor for audio socket.
  */
-int init_connection(struct pollfd* poll_desc) {
+std::pair<int, int> init_connection(struct pollfd* poll_desc) {
     int audio_socket_fd = socket(PF_INET, SOCK_DGRAM, 0); // UDP socket.
     if (audio_socket_fd < 0)
         PRINT_ERRNO();
@@ -101,14 +101,19 @@ int init_connection(struct pollfd* poll_desc) {
     poll_desc[CTRL].fd = ctrl_socket;
     poll_desc[CTRL].events = POLLIN;
 
-    return audio_socket_fd;
+    int ctrl_response_socket = socket(PF_INET, SOCK_DGRAM, 0); // UDP socket.
+    if (ctrl_response_socket < 0)
+        PRINT_ERRNO();
+
+    return std::make_pair(audio_socket_fd, ctrl_response_socket);
 }
 
 int main(int argc, char* argv[]) {
-    get_options(true, argc, argv, &MCAST_ADDR, &DATA_PORT, &CTRL_PORT, nullptr, &PSIZE, &NAME);
+    get_options(true, argc, argv, &MCAST_ADDR, &NAME, &CTRL_PORT, nullptr, &DATA_PORT, &PSIZE);
 
     struct pollfd poll_desc[N_FDS];
-    int audio_socket_fd = init_connection(poll_desc);
+    auto sockets = init_connection(poll_desc);
+    int audio_socket_fd = sockets.first, ctrl_res_socket = sockets.second;
 
     byte_t datagram[PSIZE + 16];
     uint64_t session_id = time(nullptr);
@@ -141,7 +146,7 @@ int main(int argc, char* argv[]) {
                     auto nullvector = std::vector<uint64_t>();
                     message reply_msg {REPLY, MCAST_ADDR, DATA_PORT, NAME, nullvector};
                     std::string reply_msg_str = get_message_str(reply_msg);
-                    send_data_to(poll_desc[CTRL].fd, &receiver_addr, reply_msg_str.c_str(), reply_msg_str.length());
+                    send_data_to(ctrl_res_socket, &receiver_addr, reply_msg_str.c_str(), reply_msg_str.length());
                 }
             }
         }

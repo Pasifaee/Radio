@@ -4,24 +4,25 @@ namespace po = boost::program_options;
 
 /** Command line options parsing **/
 
-void get_options(bool sender, const int ac, char* av[], addr_t* address, port_t* data_port, port_t* ctrl_port, size_t* bsize, size_t* psize, std::string* name) {
+void get_options(bool sender, const int ac, char* av[], addr_t* address, std::string* name, port_t* ctrl_port, size_t* bsize, port_t* data_port, size_t* psize) {
     // Declare the supported options.
     po::options_description desc("Allowed options");
     desc.add_options()
             ("help", "produce help message")
-            ("audio-port,P", po::value<port_t>(data_port)->default_value(DFLT_DATA_PORT), "specify port for audio transfer")
             ("control-port,C", po::value<port_t>(ctrl_port)->default_value(DFLT_CTRL_PORT), "specify port for control protocol")
             ;
     if (sender) {
         desc.add_options()
                 ("multicast-addr,a", po::value<addr_t>(address), "specify multicast IPv4 address")
+                ("audio-port,P", po::value<port_t>(data_port)->default_value(DFLT_DATA_PORT), "specify port for audio transfer")
                 ("package-size,p", po::value<size_t>(psize)->default_value(DFLT_PSIZE), "set package size")
-                ("name,n", po::value<std::string>(name)->default_value(DFLT_NAME), "set the name of the sender")
+                ("name,n", po::value<std::string>(name)->default_value(DFLT_NAME), "set the name")
                 ;
     } else { // Receiver.
         desc.add_options()
                 ("discover-addr,d", po::value<addr_t>(address)->default_value(DFLT_DISCOVER_ADDR), "specify IPv4 address for looking up radio stations")
                 ("buffer-size,b", po::value<size_t>(bsize)->default_value(DFLT_BSIZE), "set buffer size")
+                ("name,n", po::value<std::string>(name)->default_value(DFLT_NAME), "set the name of desired sender")
                 ;
     }
 

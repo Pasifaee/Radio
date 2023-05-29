@@ -6,25 +6,28 @@
 
 /* Descriptors related constants. */
 #define N_FDS 3
-#define AUDIO_IN 0
-#define STDOUT 1
-#define CTRL 2
+#define CTRL 0
+#define AUDIO_IN 1
+#define STDOUT 2
 
 /* Other constants. */
-#define LOOKUP_FREQ 5000 // Frequency of sending lookup messages in miliseconds.
-#define STATION_LOST_T 10000 // Time after which a radio station is considered to be lost, if doesn't respond, in miliseconds.
+#define LOOKUP_FREQ 5000 // Frequency of sending lookup messages in milliseconds.
+#define STATION_LOST_T 20000 // Time after which a radio station is considered to be lost, if doesn't respond, in milliseconds.
 
 /* Program arguments. */
 addr_t DISCOVER_ADDR; // Address for looking up radio stations.
 port_t DATA_PORT; // Port for audio transfer.
 port_t CTRL_PORT; // Port for communication with control protocol.
 size_t BSIZE; // Buffer size.
+std::string NAME; // Name of desired sender.
 
 size_t PSIZE; // Size of audio data in last received package.
-addr_t MCAST_ADDR = "224.0.0.1"; // IPv4 sender's address. // TODO: remove hardcoded value after debugging
+addr_t MCAST_ADDR; // Current station's multicast address.
 uint64_t BYTE0;
 uint64_t last_session_id = 0;
 bool playing;
+sockaddr_in curr_station;
+bool connected = false, connected_name = false;
 std::set<uint64_t> missing;
 
 std::map<sockaddr_in, radio_station> radio_stations;
@@ -55,29 +58,6 @@ void new_audio_session(audio_pack start_package, size_t new_PSIZE, byte_t* buffe
 
     last_session_id = start_package.session_id;
     memset(buffer, 0, BSIZE); // Cleaning the buffer.
-}
-
-// TODO: test this function
-void print_missing_packages(const audio_pack package) {
-    size_t eff_buffer_size = BSIZE - BSIZE % PSIZE;
-
-    if (package.first_byte_num > write_byte) { // Missing packages between old and new write_byte.
-        for (uint64_t i = write_byte; i < package.first_byte_num; i += PSIZE) {
-            if (i >= BYTE0)
-                missing.insert((i - BYTE0) / PSIZE);
-        }
-    } else if (package.first_byte_num < write_byte) { // Received package that was previously missing.
-        missing.erase((package.first_byte_num - BYTE0) / PSIZE);
-    }
-
-    if (write_byte >= eff_buffer_size + BYTE0) { // Remove old packages from missing.
-        auto it = missing.lower_bound((write_byte - eff_buffer_size - BYTE0) / PSIZE);
-        missing.erase(missing.begin(), it);
-    }
-
-    for (auto package_nr : missing) {
-        std::cerr << "MISSING " << package_nr << " BEFORE " << (package.first_byte_num - BYTE0) / PSIZE << "\n";
-    }
 }
 
 void write_package_to_buffer(const audio_pack package, byte_t* buffer) {
@@ -117,17 +97,17 @@ void write_package_to_buffer(const audio_pack package, byte_t* buffer) {
 
 void handle_new_package(pollfd* poll_desc, byte_t* buffer) {
     byte_t datagram[BSIZE + 1];
-    size_t package_size = receive_data(poll_desc[AUDIO_IN].fd, datagram, BSIZE + 1);
-    if (package_size <= 0 || (size_t) package_size - 2 * sizeof (uint64_t) > BSIZE) {
+    sockaddr_in sender_addr;
+    size_t package_size = receive_data_from(poll_desc[AUDIO_IN].fd, &sender_addr, datagram, BSIZE + 1);
+    if (package_size <= 0 || (size_t) package_size - 2 * sizeof (uint64_t) > BSIZE)
         return;
-    }
 
     audio_pack package = read_datagram(datagram, package_size);
 
     if (package.session_id > last_session_id) { // New session.
         new_audio_session(package, package_size - 2 * sizeof (uint64_t), buffer);
     }
-    print_missing_packages(package);
+    // print_missing_packages(package);
     if (package.session_id >= last_session_id) {
         write_package_to_buffer(package, buffer);
     }
@@ -157,7 +137,74 @@ void send_lookup_msg(pollfd* poll_desc, timer* lookup_timer) {
     poll_desc[CTRL].events = POLLIN;
 }
 
-void connect_to_station(int audio_socket, struct ip_mreq* ip_mreq, std::string mcast_addr, port_t data_port);
+/**
+ * Removes radio stations that haven't sent a REPLY message in the last STATION_LOST_T ms from the radio stations map.
+ * @return True if station we've been currently connected to has been removed, false otherwise.
+ */
+bool remove_unresponsive() {
+    timeval now;
+    gettimeofday(&now, nullptr);
+    bool switch_station = false;
+
+    auto end = radio_stations.end();
+    for (auto it = radio_stations.begin(); it != end; ) {
+        if (time_diff(now, it->second.last_reply) > STATION_LOST_T) {
+            switch_station |= connected && cmp_stations(it->first, curr_station);
+            it = radio_stations.erase(it);
+        } else {
+            it++;
+        }
+    }
+
+    return switch_station;
+}
+
+void connect_to_station(pollfd* poll_desc, struct ip_mreq* ip_mreq, sockaddr_in station_addr, std::string mcast_addr, port_t data_port, std::string name) {
+    MCAST_ADDR = mcast_addr;
+    DATA_PORT = data_port;
+
+    int audio_socket = socket(PF_INET, SOCK_DGRAM, 0);
+    if (audio_socket < 0)
+        PRINT_ERRNO();
+
+    ip_mreq->imr_interface.s_addr = htonl(INADDR_ANY);
+    if (inet_aton(MCAST_ADDR.c_str(), &ip_mreq->imr_multiaddr) == 0) {
+        fatal("inet_aton - invalid multicast address\n");
+    }
+    CHECK_ERRNO(setsockopt(audio_socket, IPPROTO_IP, IP_ADD_MEMBERSHIP, (void *) ip_mreq, sizeof *ip_mreq));
+    bind_socket(audio_socket, DATA_PORT);
+
+    poll_desc[AUDIO_IN].fd = audio_socket;
+
+    connected = true;
+    connected_name = (name == NAME);
+    curr_station = station_addr;
+}
+
+void disconnect_from_station(pollfd* poll_desc, struct ip_mreq* ip_mreq) {
+    CHECK_ERRNO(setsockopt(poll_desc[AUDIO_IN].fd, IPPROTO_IP, IP_DROP_MEMBERSHIP, (void *) ip_mreq, sizeof(ip_mreq)));
+    CHECK_ERRNO(close(poll_desc[AUDIO_IN].fd));
+    poll_desc[AUDIO_IN].fd = -1;
+
+    connected = false;
+    connected_name = false;
+}
+
+void switch_station(pollfd* poll_desc, struct ip_mreq* ip_mreq) {
+    disconnect_from_station(poll_desc, ip_mreq);
+    if (radio_stations.empty()) {
+        return;
+    }
+    for (const auto& station : radio_stations) {
+        if (station.second.name == NAME) {
+            connect_to_station(poll_desc, ip_mreq, station.first, station.second.mcast_addr, station.second.data_port, station.second.name);
+            return;
+        }
+    }
+    auto some_station = radio_stations.begin();
+    connect_to_station(poll_desc, ip_mreq, some_station->first, some_station->second.mcast_addr, some_station->second.data_port, some_station->second.name);
+
+}
 
 void handle_message(pollfd* poll_desc, struct ip_mreq* ip_mreq) {
     // Listen for REPLY messages.
@@ -168,6 +215,7 @@ void handle_message(pollfd* poll_desc, struct ip_mreq* ip_mreq) {
     msg_str[msg_len] = 0;
     message msg = parse_message(std::string(msg_str));
 
+
     if (msg.msg_type == REPLY) {
         timeval now;
         gettimeofday(&now, nullptr);
@@ -175,53 +223,19 @@ void handle_message(pollfd* poll_desc, struct ip_mreq* ip_mreq) {
         auto r = radio_stations.find(sender_addr);
         if (r == radio_stations.end()) {
             radio_stations.insert({sender_addr, radio_station{msg.name, msg.mcast_addr, msg.data_port, now}});
-            connect_to_station(poll_desc[AUDIO_IN].fd, ip_mreq, msg.mcast_addr, msg.data_port); // TODO: this is debug version
-        } else {
+            if (!connected || (!connected_name && msg.name == NAME)) {
+                if (connected)
+                    disconnect_from_station(poll_desc, ip_mreq);
+                connect_to_station(poll_desc, ip_mreq, sender_addr, msg.mcast_addr, msg.data_port, msg.name);
+            }
+        } else { // We're assuming that a station can't change its name, multicast address or data port.
             r->second.last_reply = now;
         }
     }
 }
 
-void update_map() {
-    timeval now;
-    gettimeofday(&now, nullptr);
-    auto end = radio_stations.end();
-    for (auto it = radio_stations.begin(); it != end; ) {
-        if (time_diff(now, it->second.last_reply) > STATION_LOST_T) {
-            it = radio_stations.erase(it);
-        } else {
-            it++;
-        }
-    }
-}
-
-void connect_to_station(int audio_socket, struct ip_mreq* ip_mreq, std::string mcast_addr, port_t data_port) {
-    MCAST_ADDR = mcast_addr;
-    DATA_PORT = data_port;
-
-    ip_mreq->imr_interface.s_addr = htonl(INADDR_ANY);
-    if (inet_aton(MCAST_ADDR.c_str(), &ip_mreq->imr_multiaddr) == 0) {
-        fatal("inet_aton - invalid multicast address\n");
-    }
-    CHECK_ERRNO(setsockopt(audio_socket, IPPROTO_IP, IP_ADD_MEMBERSHIP, (void *) ip_mreq, sizeof *ip_mreq));
-    bind_socket(audio_socket, DATA_PORT);
-}
-
-void disconnect_from_station(int audio_socket, struct ip_mreq* ip_mreq) {
-    CHECK_ERRNO(setsockopt(audio_socket, IPPROTO_IP, IP_DROP_MEMBERSHIP, (void *) &ip_mreq, sizeof(ip_mreq)));
-}
-
-void switch_to_station(int audio_socket, struct ip_mreq* ip_mreq, std::string mcast_addr, port_t data_port) {
-    disconnect_from_station(audio_socket, ip_mreq);
-    connect_to_station(audio_socket, ip_mreq, mcast_addr, data_port);
-}
-
-void init_connection(struct pollfd* poll_desc, struct ip_mreq* ip_mreq) {
-    int audio_socket = socket(PF_INET, SOCK_DGRAM, 0);
-    if (audio_socket < 0)
-        PRINT_ERRNO();
-
-    poll_desc[AUDIO_IN].fd = audio_socket;
+void init_connection(struct pollfd* poll_desc) {
+    poll_desc[AUDIO_IN].fd = -1;
     poll_desc[AUDIO_IN].events = POLLIN;
 
     poll_desc[STDOUT].fd = STDOUT_FILENO;
@@ -243,7 +257,7 @@ void transmit_music() {
 
     struct pollfd poll_desc[N_FDS];
     struct ip_mreq ip_mreq{};
-    init_connection(poll_desc, &ip_mreq);
+    init_connection(poll_desc);
 
     timer lookup_timer = new_timer(LOOKUP_FREQ);
     while (true) {
@@ -263,7 +277,10 @@ void transmit_music() {
         } else {
             if (poll_desc[CTRL].revents & POLLOUT) {
                 send_lookup_msg(poll_desc, &lookup_timer);
-                update_map();
+                if (remove_unresponsive()) {
+                    // Station we were connected to was just removed. We need to switch to a new station.
+                    switch_station(poll_desc, &ip_mreq);
+                }
             }
             if (poll_desc[CTRL].revents & POLLIN) {
                 handle_message(poll_desc, &ip_mreq);
@@ -276,7 +293,7 @@ void transmit_music() {
             }
         }
 
-        poll_desc[STDOUT].events = playing && play_byte < write_byte ? POLLOUT : 0;
+        poll_desc[STDOUT].events = connected && playing && play_byte < write_byte ? POLLOUT : 0;
     }
 
     // Disconnecting from multicast address.
@@ -287,6 +304,6 @@ void transmit_music() {
 
 // TODO: check if command line parameters are correct
 int main(int argc, char* argv[]) {
-    get_options(false, argc, argv, &DISCOVER_ADDR, &DATA_PORT, &CTRL_PORT, &BSIZE);
+    get_options(false, argc, argv, &DISCOVER_ADDR, &NAME, &CTRL_PORT, &BSIZE);
     transmit_music();
 }

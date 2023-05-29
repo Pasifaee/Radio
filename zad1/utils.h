@@ -44,10 +44,6 @@ struct message {
     std::vector<uint64_t> packages;
 };
 
-std::string get_message_str(message msg);
-
-message parse_message(std::string msg_str);
-
 struct radio_station {
     const std::string name;
     const addr_t mcast_addr;
@@ -61,6 +57,19 @@ struct timer {
     long int remaining; // Remaining time in miliseconds.
     timeval last_time;
 };
+
+/**
+ * TODO - description
+ */
+void get_options(bool sender, const int ac, char* av[], addr_t* address, std::string* name, port_t* ctrl_port, size_t* bsize, port_t* data_port = nullptr, size_t* psize = nullptr);
+
+inline bool cmp_stations(sockaddr_in st1, sockaddr_in st2) {
+    return (st1.sin_port == st2.sin_port && st1.sin_addr.s_addr == st2.sin_addr.s_addr);
+}
+
+std::string get_message_str(message msg);
+
+message parse_message(std::string msg_str);
 
 inline timer new_timer(long int base) {
     timeval now;
@@ -94,10 +103,5 @@ inline long int check_time(timer* timer) {
 inline bool operator<(const sockaddr_in& l, const sockaddr_in& r) {
     return (l.sin_addr.s_addr<r.sin_addr.s_addr || (l.sin_addr.s_addr==r.sin_addr.s_addr && l.sin_port<r.sin_port));
 }
-
-/**
- * TODO - description
- */
-void get_options(bool sender, int ac, char* av[], addr_t* address, port_t* data_port, port_t* ctrl_port, size_t* bsize, size_t* psize = nullptr, std::string* name = nullptr);
 
 #endif //MIMUW_SIK_ZAD1_UTILS_H
