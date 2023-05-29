@@ -4,7 +4,7 @@ namespace po = boost::program_options;
 
 /** Command line options parsing **/
 
-void get_options(bool sender, const int ac, char* av[], addr_t* address, std::string* name, port_t* ctrl_port, size_t* bsize, port_t* data_port, size_t* psize) {
+void get_options(bool sender, const int ac, char* av[], addr_t* address, std::string* name, port_t* ctrl_port, port_t* ui_port, size_t* bsize, port_t* data_port, size_t* psize) {
     // Declare the supported options.
     po::options_description desc("Allowed options");
     desc.add_options()
@@ -21,6 +21,7 @@ void get_options(bool sender, const int ac, char* av[], addr_t* address, std::st
     } else { // Receiver.
         desc.add_options()
                 ("discover-addr,d", po::value<addr_t>(address)->default_value(DFLT_DISCOVER_ADDR), "specify IPv4 address for looking up radio stations")
+                ("ui-port,U", po::value<port_t>(ui_port)->default_value(DFLT_UI_PORT), "specify port for user interface")
                 ("buffer-size,b", po::value<size_t>(bsize)->default_value(DFLT_BSIZE), "set buffer size")
                 ("name,n", po::value<std::string>(name)->default_value(DFLT_NAME), "set the name of desired sender")
                 ;

@@ -109,7 +109,7 @@ std::pair<int, int> init_connection(struct pollfd* poll_desc) {
 }
 
 int main(int argc, char* argv[]) {
-    get_options(true, argc, argv, &MCAST_ADDR, &NAME, &CTRL_PORT, nullptr, &DATA_PORT, &PSIZE);
+    get_options(true, argc, argv, &MCAST_ADDR, &NAME, &CTRL_PORT, nullptr, nullptr, &DATA_PORT, &PSIZE);
 
     struct pollfd poll_desc[N_FDS];
     auto sockets = init_connection(poll_desc);
@@ -119,7 +119,7 @@ int main(int argc, char* argv[]) {
     uint64_t session_id = time(nullptr);
     uint64_t first_byte_num = 0;
 
-    int timeout = -1; // Wait indefinitely. // TODO if we change timeout we need to handle poll_status == 0
+    int timeout = -1; // Wait indefinitely.
     while (true) {
         poll_desc[STDIN].revents = 0;
         poll_desc[CTRL].revents = 0;

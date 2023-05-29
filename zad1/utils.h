@@ -13,6 +13,7 @@
 #define DFLT_DISCOVER_ADDR "255.255.255.255"
 #define DFLT_DATA_PORT 27924
 #define DFLT_CTRL_PORT 37924
+#define DFLT_UI_PORT 17924
 #define DFLT_PSIZE 512
 #define DFLT_BSIZE 65536
 #define DFLT_NAME "Nienazwany nadajnik"
@@ -20,6 +21,7 @@
 // Constants.
 #define NO_FLAGS 0
 #define MSG_BUFF_SIZE 1024
+#define QUEUE_LENGTH 5
 #define LOOKUP_STR (std::string) "ZERO_SEVEN_COME_IN"
 #define REPLY_STR (std::string) "BOREWICZ_HERE"
 #define REXMIT_STR (std::string) "LOUDER_PLEASE"
@@ -61,7 +63,7 @@ struct timer {
 /**
  * TODO - description
  */
-void get_options(bool sender, const int ac, char* av[], addr_t* address, std::string* name, port_t* ctrl_port, size_t* bsize, port_t* data_port = nullptr, size_t* psize = nullptr);
+void get_options(bool sender, const int ac, char* av[], addr_t* address, std::string* name, port_t* ctrl_port, port_t* ui_port, size_t* bsize, port_t* data_port = nullptr, size_t* psize = nullptr);
 
 inline bool cmp_stations(sockaddr_in st1, sockaddr_in st2) {
     return (st1.sin_port == st2.sin_port && st1.sin_addr.s_addr == st2.sin_addr.s_addr);
