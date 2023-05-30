@@ -32,7 +32,7 @@ uint64_t last_session_id = 0;
 bool playing;
 sockaddr_in curr_station;
 bool connected = false, connected_name = false;
-bool finish = false;
+pthread_mutex_t lock;
 
 std::map<sockaddr_in, radio_station> radio_stations;
 
@@ -153,7 +153,9 @@ bool remove_unresponsive() {
     for (auto it = radio_stations.begin(); it != end; ) {
         if (time_diff(now, it->second.last_reply) > STATION_LOST_T) {
             switch_station |= connected && cmp_stations(it->first, curr_station);
+            pthread_mutex_lock(&lock);
             it = radio_stations.erase(it);
+            pthread_mutex_unlock(&lock);
         } else {
             it++;
         }
@@ -225,7 +227,9 @@ void handle_message(pollfd* poll_desc, struct ip_mreq* ip_mreq) {
 
         auto r = radio_stations.find(sender_addr);
         if (r == radio_stations.end()) {
+            pthread_mutex_lock(&lock);
             radio_stations.insert({sender_addr, radio_station{msg.name, msg.mcast_addr, msg.data_port, now}});
+            pthread_mutex_unlock(&lock);
             if (!connected || (!connected_name && msg.name == NAME)) {
                 if (connected)
                     disconnect_from_station(poll_desc, ip_mreq);
@@ -302,11 +306,16 @@ void transmit_music(int to_ui_fd, int from_ui_fd) {
                 play(buffer);
             }
             if (poll_desc[UI_IN].revents & POLLIN) {
-                char message[3];
-                ssize_t received_bytes = read(poll_desc[UI_IN].fd, message, 3);
+                char message[100];
+                ssize_t received_bytes = read(poll_desc[UI_IN].fd, message, 100);
                 if (received_bytes == -1)
                     fatal("Error in read\n");
                 std::cout << message << "\n";
+
+                // DEBUG
+                char* message2 = "message to ui\n";
+                ssize_t b = write(to_ui_fd, message2, strlen(message2));
+                std::cout << "Sent " << b << " bytes\n";
             }
         }
 
@@ -322,7 +331,7 @@ void transmit_music(int to_ui_fd, int from_ui_fd) {
 void create_ui_thread(int write_fd, int read_fd) {
     pthread_t thread;
     auto* args = (thread_args*) malloc(sizeof(thread_args));
-    *args = thread_args{UI_PORT, write_fd, read_fd};
+    *args = thread_args{UI_PORT, write_fd, read_fd, &radio_stations, &lock};
     CHECK_ERRNO(pthread_create(&thread, nullptr, run_ui, args));
     CHECK_ERRNO(pthread_detach(thread));
 }

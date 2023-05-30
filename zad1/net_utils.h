@@ -134,13 +134,14 @@ inline static void connect_socket(int socket_fd, const struct sockaddr_in *addre
     CHECK_ERRNO(connect(socket_fd, (struct sockaddr *) address, sizeof(*address)));
 }
 
-inline static void send_data(int socket_fd, const void *data, size_t length) {
+inline static ssize_t send_data(int socket_fd, const void *data, size_t length) {
     errno = 0;
     ssize_t sent_length = send(socket_fd, data, length, NO_FLAGS);
     if (sent_length < 0) {
         PRINT_ERRNO();
     }
     ENSURE(sent_length == (ssize_t) length);
+    return sent_length;
 }
 
 inline static ssize_t send_data_to(int socket_fd, const struct sockaddr_in *send_address, const void *data, size_t length) {

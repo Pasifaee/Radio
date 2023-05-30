@@ -6,6 +6,15 @@
 
 #define MAX_CONNS 10 // Maximum number of clients using the UI.
 
+
+struct thread_args {
+    port_t ui_port;
+    int write_fd;
+    int read_fd;
+    std::map<sockaddr_in, radio_station>* radio_stations_ptr;
+    pthread_mutex_t* lock_ptr;
+};
+
 void* run_ui(void*);
 
 inline bool is_up_arrow(const char* key, ssize_t n_bytes) {
