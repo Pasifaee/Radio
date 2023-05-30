@@ -27,6 +27,7 @@ std::string NAME; // Name of desired sender.
 
 size_t PSIZE; // Size of audio data in last received package.
 addr_t MCAST_ADDR; // Current station's multicast address.
+int UI_OUT_FD;
 uint64_t BYTE0;
 uint64_t last_session_id = 0;
 bool playing;
@@ -127,6 +128,13 @@ void play(const byte_t* buffer) {
     play_byte += PSIZE;
 }
 
+void send_ui_update_msg() {
+    const char* update_msg = UPDATE_STR;
+    ssize_t sent_bytes = write(UI_OUT_FD, update_msg, strlen(update_msg)+1);
+    if (sent_bytes == -1)
+        fatal("Error in write\n");
+}
+
 void send_lookup_msg(pollfd* poll_desc, timer* lookup_timer) {
     // Send LOOKUP message.
     sockaddr_in discover_addr = get_udp_address(DISCOVER_ADDR.data(), CTRL_PORT);
@@ -155,6 +163,7 @@ bool remove_unresponsive() {
             switch_station |= connected && cmp_stations(it->first, curr_station);
             pthread_mutex_lock(&lock);
             it = radio_stations.erase(it);
+            send_ui_update_msg();
             pthread_mutex_unlock(&lock);
         } else {
             it++;
@@ -229,6 +238,7 @@ void handle_message(pollfd* poll_desc, struct ip_mreq* ip_mreq) {
         if (r == radio_stations.end()) {
             pthread_mutex_lock(&lock);
             radio_stations.insert({sender_addr, radio_station{msg.name, msg.mcast_addr, msg.data_port, now}});
+            send_ui_update_msg();
             pthread_mutex_unlock(&lock);
             if (!connected || (!connected_name && msg.name == NAME)) {
                 if (connected)
@@ -266,7 +276,7 @@ void init_connection(struct pollfd* poll_desc) {
     poll_desc[CTRL].events = POLLIN | POLLOUT;
 }
 
-void transmit_music(int to_ui_fd, int from_ui_fd) {
+void transmit_music(int from_ui_fd) {
     byte_t buffer[BSIZE];
 
     struct pollfd poll_desc[N_FDS];
@@ -314,7 +324,7 @@ void transmit_music(int to_ui_fd, int from_ui_fd) {
 
                 // DEBUG
                 char* message2 = "message to ui\n";
-                ssize_t b = write(to_ui_fd, message2, strlen(message2));
+                ssize_t b = write(UI_OUT_FD, message2, strlen(message2));
                 std::cout << "Sent " << b << " bytes\n";
             }
         }
@@ -344,6 +354,7 @@ int main(int argc, char* argv[]) {
     CHECK_ERRNO(pipe(from_ui));
     int to_ui[2];
     CHECK_ERRNO(pipe(to_ui));
+    UI_OUT_FD = to_ui[1];
     create_ui_thread(from_ui[1], to_ui[0]);
-    transmit_music(to_ui[1], from_ui[0]);
+    transmit_music(from_ui[0]);
 }

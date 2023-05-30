@@ -4,8 +4,19 @@
 #define CENTRAL 0
 #define RECV_IN 1
 
-std::string print_interface(std::map<sockaddr_in, radio_station>* radio_stations_ptr, pthread_mutex_t* lock_ptr) {
+void turn_off_enter(pollfd* poll_desc, int client_nr) {
+    const char* turn_off_message = "\xFF\xFD\x22";
+    send_data(poll_desc[client_nr].fd, turn_off_message, strlen(turn_off_message) + 1);
+}
+
+void clear_screen(pollfd* poll_desc, int client_nr) {
+    const char* clear_message = "\u001B[2J";
+    send_data(poll_desc[client_nr].fd, clear_message, strlen(clear_message) + 1);
+}
+
+void print_interface(pollfd* poll_desc, int client_nr, std::map<sockaddr_in, radio_station>* radio_stations_ptr, pthread_mutex_t* lock_ptr) {
     std::string interface;
+    interface += "\n";
     interface += "------------------------------------------------------------------------\n\n";
     interface += " SIK Radio\n\n";
     interface += "------------------------------------------------------------------------\n\n";
@@ -15,7 +26,21 @@ std::string print_interface(std::map<sockaddr_in, radio_station>* radio_stations
     }
     pthread_mutex_unlock(lock_ptr);
     interface += "------------------------------------------------------------------------\n";
-    return interface;
+
+    char interface_char[interface.length()+1];
+    strcpy(interface_char, interface.data());
+    clear_screen(poll_desc, client_nr);
+    ssize_t bytes_sent = send_data(poll_desc[client_nr].fd, interface_char, interface.length()+1);
+    if (bytes_sent == -1)
+        fatal("Error in send\n");
+}
+
+bool receive_update_msg(int read_fd) {
+    char msg[MSG_BUFF_SIZE-1];
+    ssize_t received_bytes = read(read_fd, msg, MSG_BUFF_SIZE);
+    if (received_bytes == -1)
+        fatal("Error in read\n");
+    return strcmp(msg, UPDATE_STR) == 0;
 }
 
 void* run_ui(void* args_ptr) {
@@ -61,12 +86,14 @@ void* run_ui(void* args_ptr) {
                 sockaddr_in client_addr;
                 int client_fd = accept_connection(poll_desc[0].fd, &client_addr);
 
+                int client_nr;
                 bool accepted = false;
                 for (int i = 2; i < MAX_CONNS; ++i) {
                     if (poll_desc[i].fd == -1) {
                         poll_desc[i].fd = client_fd;
                         poll_desc[i].events = POLLIN;
                         client_addrs[i] = client_addr;
+                        client_nr = i;
                         accepted = true;
                         break;
                     }
@@ -74,26 +101,23 @@ void* run_ui(void* args_ptr) {
                 if (!accepted) {
                     CHECK_ERRNO(close(client_fd));
                     std::cerr << "Too many clients\n";
+                } else {
+                    turn_off_enter(poll_desc, client_nr);
+                    print_interface(poll_desc, client_nr, radio_stations_ptr, lock_ptr);
                 }
             }
             if(poll_desc[RECV_IN].revents & POLLIN) {
-                char message[100];
-                ssize_t r = read(read_fd, message, 100);
-                std::cout << "[UI] Read " << r << " bytes from receiver\n";
-                for (int i = 2; i < MAX_CONNS; ++i) {
-                    if (poll_desc[i].fd != -1) {
-                        std::string interface = print_interface(radio_stations_ptr, lock_ptr);
-                        char interface_char[interface.length()+1];
-                        strcpy(interface_char, interface.data());
-                        ssize_t bytes_sent = send_data(poll_desc[i].fd, interface_char, interface.length()+1);
-                        if (bytes_sent == -1)
-                            fatal("Error in send\n");
+                if (receive_update_msg(read_fd)) {
+                    for (int i = 2; i < MAX_CONNS; ++i) {
+                        if (poll_desc[i].fd != -1) {
+                            print_interface(poll_desc, i, radio_stations_ptr, lock_ptr);
+                        }
                     }
                 }
             }
             for (int i = 2; i < MAX_CONNS; ++i) {
                 if (poll_desc[i].fd != -1 && (poll_desc[i].revents & (POLLIN | POLLERR))) {
-                    char key[5]; // TODO: what size?
+                    char key[3];
                     ssize_t received_bytes = read(poll_desc[i].fd, key, sizeof (char) * 5);
                     if (received_bytes < 0) {
                         CHECK_ERRNO(close(poll_desc[i].fd));
@@ -108,8 +132,9 @@ void* run_ui(void* args_ptr) {
                             if (sent_bytes == -1)
                                 fatal("Error in write\n");
                         }
-                        if (is_down_arrow(key, received_bytes))
+                        if (is_down_arrow(key, received_bytes)) {;}
                            ; // std::cout << "Pressed DOWN\n";
+                        print_interface(poll_desc, i, radio_stations_ptr, lock_ptr);
                     }
                 }
             }
