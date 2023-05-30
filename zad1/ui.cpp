@@ -14,7 +14,7 @@ void clear_screen(pollfd* poll_desc, int client_nr) {
     send_data(poll_desc[client_nr].fd, clear_message, strlen(clear_message) + 1);
 }
 
-void print_interface(pollfd* poll_desc, int client_nr, std::map<sockaddr_in, radio_station>* radio_stations_ptr, pthread_mutex_t* lock_ptr) {
+void print_interface(pollfd* poll_desc, int client_nr, std::map<sockaddr_in, radio_station>* radio_stations_ptr, pthread_mutex_t* lock_ptr, sockaddr_in* curr_station_ptr) {
     std::string interface;
     interface += "\n";
     interface += "------------------------------------------------------------------------\n\n";
@@ -22,6 +22,8 @@ void print_interface(pollfd* poll_desc, int client_nr, std::map<sockaddr_in, rad
     interface += "------------------------------------------------------------------------\n\n";
     pthread_mutex_lock(lock_ptr);
     for (auto it = radio_stations_ptr->begin(); it != radio_stations_ptr->end(); it++) {
+        if (cmp_stations(it->first, *curr_station_ptr))
+            interface += " > ";
         interface += "Radio \"" + it->second.name + "\"\n\n";
     }
     pthread_mutex_unlock(lock_ptr);
@@ -49,7 +51,8 @@ void* run_ui(void* args_ptr) {
     port_t ui_port = args.ui_port;
     int write_fd = args.write_fd, read_fd = args.read_fd;
     auto radio_stations_ptr = args.radio_stations_ptr;
-    auto lock_ptr = args.lock_ptr;
+    pthread_mutex_t* lock_ptr = args.lock_ptr;
+    sockaddr_in* curr_station_ptr = args.curr_station_ptr;
 
     struct sockaddr_in client_addrs[MAX_CONNS];
     struct pollfd poll_desc[MAX_CONNS];
@@ -103,14 +106,14 @@ void* run_ui(void* args_ptr) {
                     std::cerr << "Too many clients\n";
                 } else {
                     turn_off_enter(poll_desc, client_nr);
-                    print_interface(poll_desc, client_nr, radio_stations_ptr, lock_ptr);
+                    print_interface(poll_desc, client_nr, radio_stations_ptr, lock_ptr, curr_station_ptr);
                 }
             }
             if(poll_desc[RECV_IN].revents & POLLIN) {
                 if (receive_update_msg(read_fd)) {
                     for (int i = 2; i < MAX_CONNS; ++i) {
                         if (poll_desc[i].fd != -1) {
-                            print_interface(poll_desc, i, radio_stations_ptr, lock_ptr);
+                            print_interface(poll_desc, i, radio_stations_ptr, lock_ptr, curr_station_ptr);
                         }
                     }
                 }
@@ -134,7 +137,7 @@ void* run_ui(void* args_ptr) {
                         }
                         if (is_down_arrow(key, received_bytes)) {;}
                            ; // std::cout << "Pressed DOWN\n";
-                        print_interface(poll_desc, i, radio_stations_ptr, lock_ptr);
+                        print_interface(poll_desc, i, radio_stations_ptr, lock_ptr, curr_station_ptr);
                     }
                 }
             }

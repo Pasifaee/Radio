@@ -13,6 +13,7 @@ struct thread_args {
     int read_fd;
     std::map<sockaddr_in, radio_station>* radio_stations_ptr;
     pthread_mutex_t* lock_ptr;
+    sockaddr_in* curr_station_ptr;
 };
 
 void* run_ui(void*);

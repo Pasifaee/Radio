@@ -192,7 +192,10 @@ void connect_to_station(pollfd* poll_desc, struct ip_mreq* ip_mreq, sockaddr_in 
 
     connected = true;
     connected_name = (name == NAME);
+    pthread_mutex_lock(&lock);
     curr_station = station_addr;
+    pthread_mutex_unlock(&lock);
+    send_ui_update_msg();
 }
 
 void disconnect_from_station(pollfd* poll_desc, struct ip_mreq* ip_mreq) {
@@ -202,6 +205,7 @@ void disconnect_from_station(pollfd* poll_desc, struct ip_mreq* ip_mreq) {
 
     connected = false;
     connected_name = false;
+    send_ui_update_msg();
 }
 
 void switch_station(pollfd* poll_desc, struct ip_mreq* ip_mreq) {
@@ -341,7 +345,7 @@ void transmit_music(int from_ui_fd) {
 void create_ui_thread(int write_fd, int read_fd) {
     pthread_t thread;
     auto* args = (thread_args*) malloc(sizeof(thread_args));
-    *args = thread_args{UI_PORT, write_fd, read_fd, &radio_stations, &lock};
+    *args = thread_args{UI_PORT, write_fd, read_fd, &radio_stations, &lock, &curr_station};
     CHECK_ERRNO(pthread_create(&thread, nullptr, run_ui, args));
     CHECK_ERRNO(pthread_detach(thread));
 }
