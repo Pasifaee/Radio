@@ -1,9 +1,12 @@
 #include <poll.h>
 #include "ui.h"
 
-void* run_ui(void* ui_port_ptr) {
-    int ui_port = *(port_t *) ui_port_ptr;
-    free(ui_port_ptr);
+void* run_ui(void* args_ptr) {
+    thread_args args = *(thread_args *) args_ptr;
+    free(args_ptr);
+    port_t ui_port = args.ui_port;
+    int write_fd = args.write_fd, read_fd = args.read_fd;
+    std::cout << "[thread] From ui write fd = " << write_fd << "\n";
 
     struct pollfd poll_descriptors[MAX_CONNS];
     for (int i = 0; i < MAX_CONNS; ++i) {
@@ -55,7 +58,7 @@ void* run_ui(void* ui_port_ptr) {
             for (int i = 1; i < MAX_CONNS; ++i) {
                 if (poll_descriptors[i].fd != -1 && (poll_descriptors[i].revents & (POLLIN | POLLERR))) {
                     char key[5];
-                    ssize_t received_bytes = read(poll_descriptors[i].fd, key, sizeof (char) * 10);
+                    ssize_t received_bytes = read(poll_descriptors[i].fd, key, sizeof (char) * 5);
                     if (received_bytes < 0) {
                         CHECK_ERRNO(close(poll_descriptors[i].fd));
                         poll_descriptors[i].fd = -1;
@@ -64,10 +67,14 @@ void* run_ui(void* ui_port_ptr) {
                         CHECK_ERRNO(close(poll_descriptors[i].fd));
                         poll_descriptors[i].fd = -1;
                     } else {
-                        if (is_up_arrow(key, received_bytes))
-                            std::cout << "Pressed UP\n";
+                        if (is_up_arrow(key, received_bytes)) {
+                            char* message = "[thread] Pressed UP\n";
+                            ssize_t sent_bytes = write(write_fd, message, strlen(message)+1);
+                            if (sent_bytes == -1)
+                                fatal("Error in write\n");
+                        }
                         if (is_down_arrow(key, received_bytes))
-                            std::cout << "Pressed DOWN\n";
+                           ; // std::cout << "Pressed DOWN\n";
                     }
                 }
             }

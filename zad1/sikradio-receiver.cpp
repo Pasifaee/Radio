@@ -7,10 +7,11 @@
 #include "ui.h"
 
 /* Descriptors related constants. */
-#define N_FDS 3
+#define N_FDS 4
 #define CTRL 0
 #define AUDIO_IN 1
 #define STDOUT 2
+#define UI_IN 3
 
 /* Other constants. */
 #define LOOKUP_FREQ 5000 // Frequency of sending lookup messages in milliseconds.
@@ -236,6 +237,13 @@ void handle_message(pollfd* poll_desc, struct ip_mreq* ip_mreq) {
     }
 }
 
+void reset_revents(pollfd* poll_desc) {
+    poll_desc[AUDIO_IN].revents = 0;
+    poll_desc[STDOUT].revents = 0;
+    poll_desc[CTRL].revents = 0;
+    poll_desc[UI_IN].revents = 0;
+}
+
 void init_connection(struct pollfd* poll_desc) {
     poll_desc[AUDIO_IN].fd = -1;
     poll_desc[AUDIO_IN].events = POLLIN;
@@ -254,18 +262,18 @@ void init_connection(struct pollfd* poll_desc) {
     poll_desc[CTRL].events = POLLIN | POLLOUT;
 }
 
-void transmit_music() {
+void transmit_music(int to_ui_fd, int from_ui_fd) {
     byte_t buffer[BSIZE];
 
     struct pollfd poll_desc[N_FDS];
+    poll_desc[UI_IN].fd = from_ui_fd;
+    poll_desc[UI_IN].events = POLLIN;
     struct ip_mreq ip_mreq{};
     init_connection(poll_desc);
 
     timer lookup_timer = new_timer(LOOKUP_FREQ);
     while (true) {
-        poll_desc[AUDIO_IN].revents = 0;
-        poll_desc[STDOUT].revents = 0;
-        poll_desc[CTRL].revents = 0;
+        reset_revents(poll_desc);
 
         int poll_status = poll(poll_desc, N_FDS, (int) check_time(&lookup_timer));
         if (check_time(&lookup_timer) <= 0) { // Time to send a lookup message.
@@ -293,6 +301,13 @@ void transmit_music() {
             if (poll_desc[STDOUT].revents & POLLOUT) {
                 play(buffer);
             }
+            if (poll_desc[UI_IN].revents & POLLIN) {
+                char message[3];
+                ssize_t received_bytes = read(poll_desc[UI_IN].fd, message, 3);
+                if (received_bytes == -1)
+                    fatal("Error in read\n");
+                std::cout << message << "\n";
+            }
         }
 
         poll_desc[STDOUT].events = connected && playing && play_byte < write_byte ? POLLOUT : 0;
@@ -304,17 +319,22 @@ void transmit_music() {
     CHECK_ERRNO(close(poll_desc[AUDIO_IN].fd));
 }
 
-void create_ui_thread() {
+void create_ui_thread(int write_fd, int read_fd) {
     pthread_t thread;
-    auto* ui_port_ptr = (port_t*) malloc(sizeof(port_t));
-    *ui_port_ptr = UI_PORT;
-    CHECK_ERRNO(pthread_create(&thread, nullptr, run_ui, ui_port_ptr));
+    auto* args = (thread_args*) malloc(sizeof(thread_args));
+    *args = thread_args{UI_PORT, write_fd, read_fd};
+    CHECK_ERRNO(pthread_create(&thread, nullptr, run_ui, args));
     CHECK_ERRNO(pthread_detach(thread));
 }
 
 // TODO: check if command line parameters are correct
 int main(int argc, char* argv[]) {
     get_options(false, argc, argv, &DISCOVER_ADDR, &NAME, &CTRL_PORT, &UI_PORT, &BSIZE);
-    create_ui_thread();
-    transmit_music();
+
+    int from_ui[2];
+    CHECK_ERRNO(pipe(from_ui));
+    int to_ui[2];
+    CHECK_ERRNO(pipe(to_ui));
+    create_ui_thread(from_ui[1], to_ui[0]);
+    transmit_music(to_ui[1], from_ui[0]);
 }

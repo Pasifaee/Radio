@@ -60,6 +60,12 @@ struct timer {
     timeval last_time;
 };
 
+struct thread_args {
+    port_t ui_port;
+    int write_fd;
+    int read_fd;
+};
+
 /**
  * TODO - description
  */
