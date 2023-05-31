@@ -146,7 +146,7 @@ bool receive_ui_change_msg(int from_ui_fd) {
 
 void send_lookup_msg(pollfd* poll_desc, timer* lookup_timer) {
     // Send LOOKUP message.
-    sockaddr_in discover_addr = get_udp_address(DISCOVER_ADDR.data(), CTRL_PORT);
+    sockaddr_in discover_addr = get_udp_address((char*) DISCOVER_ADDR.data(), CTRL_PORT);
     message lookup_msg{};
     lookup_msg.msg_type = LOOKUP;
     std::string lookup_msg_str = get_message_str(lookup_msg);
@@ -365,7 +365,12 @@ void create_ui_thread(int write_fd, int read_fd) {
 
 // TODO: check if command line parameters are correct
 int main(int argc, char* argv[]) {
-    get_options(false, argc, argv, &DISCOVER_ADDR, &NAME, &CTRL_PORT, &UI_PORT, &BSIZE);
+    try {
+        get_options(false, argc, argv, &DISCOVER_ADDR, &NAME, &CTRL_PORT, &UI_PORT, &BSIZE);
+    } catch (std::exception e) {
+        // std::cerr << e.what() << "\n";
+        exit(1);
+    }
 
     int from_ui[2];
     CHECK_ERRNO(pipe(from_ui));
