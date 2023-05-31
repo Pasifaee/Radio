@@ -5,41 +5,71 @@ namespace po = boost::program_options;
 /** Command line options parsing **/
 
 void get_options(bool sender, const int ac, char* av[], addr_t* address, std::string* name, port_t* ctrl_port, port_t* ui_port, size_t* bsize, port_t* data_port, size_t* psize) {
+    std::string ctrl_port_str, ui_port_str, data_port_str;
+    ssize_t bsize_test, psize_test;
     // Declare the supported options.
     po::options_description desc("Allowed options");
     desc.add_options()
             ("help", "produce help message")
-            ("control-port,C", po::value<port_t>(ctrl_port)->default_value(DFLT_CTRL_PORT), "specify port for control protocol")
-            ;
+            ("control-port,C", po::value<std::string>(&ctrl_port_str)->default_value(DFLT_CTRL_PORT),
+             "specify port for control protocol");
     if (sender) {
         desc.add_options()
                 ("multicast-addr,a", po::value<addr_t>(address), "specify multicast IPv4 address")
-                ("audio-port,P", po::value<port_t>(data_port)->default_value(DFLT_DATA_PORT), "specify port for audio transfer")
-                ("package-size,p", po::value<size_t>(psize)->default_value(DFLT_PSIZE), "set package size")
-                ("name,n", po::value<std::string>(name)->default_value(DFLT_NAME), "set the name")
-                ;
+                ("audio-port,P", po::value<std::string>(&data_port_str)->default_value(DFLT_DATA_PORT),
+                 "specify port for audio transfer")
+                ("package-size,p", po::value<ssize_t>(&psize_test)->default_value(DFLT_PSIZE), "set package size")
+                ("name,n", po::value<std::string>(name)->default_value(DFLT_NAME), "set the name");
     } else { // Receiver.
         desc.add_options()
-                ("discover-addr,d", po::value<addr_t>(address)->default_value(DFLT_DISCOVER_ADDR), "specify IPv4 address for looking up radio stations")
-                ("ui-port,U", po::value<port_t>(ui_port)->default_value(DFLT_UI_PORT), "specify port for user interface")
-                ("buffer-size,b", po::value<size_t>(bsize)->default_value(DFLT_BSIZE), "set buffer size")
-                ("name,n", po::value<std::string>(name)->default_value(DFLT_NAME), "set the name of desired sender")
-                ;
+                ("discover-addr,d", po::value<addr_t>(address)->default_value(DFLT_DISCOVER_ADDR),
+                 "specify IPv4 address for looking up radio stations")
+                ("ui-port,U", po::value<std::string>(&ui_port_str)->default_value(DFLT_UI_PORT),
+                 "specify port for user interface")
+                ("buffer-size,b", po::value<ssize_t>(&bsize_test)->default_value(DFLT_BSIZE), "set buffer size")
+                ("name,n", po::value<std::string>(name)->default_value(DFLT_NAME), "set the name of desired sender");
     }
 
     po::variables_map vm;
-    try {
-        po::store(po::parse_command_line(ac, av, desc), vm);
-        if (vm.count("help")) {
-            std::cout << desc << "\n";
-        }
-        if (sender && !vm.count("multicast-addr"))
-            throw std::runtime_error("Specifying the address with -a option is required");
-    } catch (std::exception& e) { // TODO: if this code repeats, make a new function
-        std::cerr << "Error: bad program call\n\t" << e.what() << "\n";
-        exit(1);
+    po::store(po::parse_command_line(ac, av, desc), vm);
+    if (vm.count("help")) {
+        std::cout << desc << "\n";
     }
     po::notify(vm);
+
+    if (sender) {
+        if (!vm.count("multicast-addr")) {
+            fatal("Specifying the address with -a option is required\n");
+        } else {
+            in_addr tmp;
+            if (inet_aton((*address).c_str(), &tmp) == 0) {
+                fatal("Invalid multicast address\n");
+            }
+        }
+    }
+
+    get_udp_address((char*) (*address).data(), 12345); // Check if address is a valid IPv4 address.
+
+    *ctrl_port = read_port(ctrl_port_str.c_str());
+    if (!sender)
+        *ui_port = read_port(ui_port_str.c_str());
+    else
+        *data_port = read_port(data_port_str.c_str());
+
+    if (!sender) {
+        if (bsize_test <= 0) {
+            fatal("Buffer size must be positive.\n");
+        } else {
+            *bsize = (size_t) bsize_test;
+        }
+    }
+    if (sender) {
+        if (psize_test <= 0) {
+            fatal("Package size must be positive.\n");
+        } else {
+            *psize = (size_t) psize_test;
+        }
+    }
 }
 
 /** Creating messages **/

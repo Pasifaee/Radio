@@ -1,6 +1,6 @@
 .PHONY: all clean
 
-LDFLAGS = -lboost_program_options
+LDFLAGS = -lboost_program_options -lpthread
 
 all: sikradio-sender sikradio-receiver
 

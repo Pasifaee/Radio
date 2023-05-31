@@ -11,9 +11,9 @@
 
 // Default values.
 #define DFLT_DISCOVER_ADDR "255.255.255.255"
-#define DFLT_DATA_PORT 27924
-#define DFLT_CTRL_PORT 37924
-#define DFLT_UI_PORT 17924
+#define DFLT_DATA_PORT "27924"
+#define DFLT_CTRL_PORT "37924"
+#define DFLT_UI_PORT "17924"
 #define DFLT_PSIZE 512
 #define DFLT_BSIZE 65536
 #define DFLT_NAME "Nienazwany nadajnik"
