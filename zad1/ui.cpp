@@ -58,12 +58,38 @@ void print_interface(pollfd* poll_desc, int client_nr, std::map<sockaddr_in, rad
         fatal("Error in send\n");
 }
 
+void send_change_msg(int write_fd) {
+    const char* change_msg = CHANGE_STR;
+    ssize_t sent_bytes = write(write_fd, change_msg, strlen(change_msg)+1);
+    if (sent_bytes == -1)
+        fatal("Error in write\n");
+}
+
 bool receive_update_msg(int read_fd) {
     char msg[MSG_BUFF_SIZE-1];
     ssize_t received_bytes = read(read_fd, msg, MSG_BUFF_SIZE);
     if (received_bytes == -1)
         fatal("Error in read\n");
     return strcmp(msg, UPDATE_STR) == 0;
+}
+
+void change_station(bool up, thread_args args) {
+    pthread_mutex_lock(args.lock_ptr);
+    auto stations_srtd = sorted_stations(*args.radio_stations_ptr);
+    int curr_st_nr = curr_station_nr(stations_srtd, *args.curr_station_ptr);
+    int change_st_nr;
+
+    if (up) {
+        change_st_nr = curr_st_nr - 1;
+    } else {
+        change_st_nr = curr_st_nr + 1;
+    }
+
+    if (change_st_nr >= 0 && change_st_nr < (int) stations_srtd.size()) {
+        *args.change_station_ptr = stations_srtd[change_st_nr].second;
+        send_change_msg(args.write_fd);
+    }
+    pthread_mutex_unlock(args.lock_ptr);
 }
 
 void* run_ui(void* args_ptr) {
@@ -74,6 +100,7 @@ void* run_ui(void* args_ptr) {
     auto radio_stations_ptr = args.radio_stations_ptr;
     pthread_mutex_t* lock_ptr = args.lock_ptr;
     sockaddr_in* curr_station_ptr = args.curr_station_ptr;
+    sockaddr_in* change_station_ptr = args.change_station_ptr;
 
     struct sockaddr_in client_addrs[MAX_CONNS];
     struct pollfd poll_desc[MAX_CONNS];
@@ -150,14 +177,13 @@ void* run_ui(void* args_ptr) {
                         CHECK_ERRNO(close(poll_desc[i].fd));
                         poll_desc[i].fd = -1;
                     } else {
-                        if (is_up_arrow(key, received_bytes)) {
-                            char* message = "[thread] Pressed UP\n";
-                            ssize_t sent_bytes = write(write_fd, message, strlen(message)+1);
-                            if (sent_bytes == -1)
-                                fatal("Error in write\n");
+                        if (is_up_arrow(key, (int) received_bytes)) {
+                            change_station(true, args);
                         }
-                        if (is_down_arrow(key, received_bytes)) {;}
-                           ; // std::cout << "Pressed DOWN\n";
+                        if (is_down_arrow(key, (int) received_bytes)) {
+                            change_station(false, args);
+                        }
+
                         print_interface(poll_desc, i, radio_stations_ptr, lock_ptr, curr_station_ptr);
                     }
                 }

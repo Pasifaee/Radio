@@ -6,6 +6,7 @@
 
 #define MAX_CONNS 10 // Maximum number of clients using the UI.
 #define UPDATE_STR "UPDATE"
+#define CHANGE_STR "CHANGE"
 
 struct thread_args {
     port_t ui_port;
@@ -14,6 +15,7 @@ struct thread_args {
     std::map<sockaddr_in, radio_station>* radio_stations_ptr;
     pthread_mutex_t* lock_ptr;
     sockaddr_in* curr_station_ptr;
+    sockaddr_in* change_station_ptr;
 };
 
 void* run_ui(void*);

@@ -32,7 +32,9 @@ uint64_t BYTE0;
 uint64_t last_session_id = 0;
 bool playing;
 sockaddr_in curr_station;
-bool connected = false, connected_name = false;
+sockaddr_in change_station; // Station user wants to switch to in the UI.
+bool connected = false; // Whether we are connected to a station.
+bool connected_name = false; // Whether we are connected to a station with our desired name.
 pthread_mutex_t lock;
 
 std::map<sockaddr_in, radio_station> radio_stations;
@@ -108,10 +110,9 @@ void handle_new_package(pollfd* poll_desc, byte_t* buffer) {
 
     audio_pack package = read_datagram(datagram, package_size);
 
-    if (package.session_id > last_session_id) { // New session.
+    if (package.session_id != last_session_id) { // New session.
         new_audio_session(package, package_size - 2 * sizeof (uint64_t), buffer);
     }
-    // print_missing_packages(package);
     if (package.session_id >= last_session_id) {
         write_package_to_buffer(package, buffer);
     }
@@ -133,6 +134,14 @@ void send_ui_update_msg() {
     ssize_t sent_bytes = write(UI_OUT_FD, update_msg, strlen(update_msg)+1);
     if (sent_bytes == -1)
         fatal("Error in write\n");
+}
+
+bool receive_ui_change_msg(int from_ui_fd) {
+    char msg[MSG_BUFF_SIZE-1];
+    ssize_t received_bytes = read(from_ui_fd, msg, MSG_BUFF_SIZE);
+    if (received_bytes == -1)
+        fatal("Error in read\n");
+    return strcmp(msg, CHANGE_STR) == 0;
 }
 
 void send_lookup_msg(pollfd* poll_desc, timer* lookup_timer) {
@@ -222,6 +231,17 @@ void switch_station(pollfd* poll_desc, struct ip_mreq* ip_mreq) {
     auto some_station = radio_stations.begin();
     connect_to_station(poll_desc, ip_mreq, some_station->first, some_station->second.mcast_addr, some_station->second.data_port, some_station->second.name);
 
+}
+
+void switch_to_station(pollfd* poll_desc, struct ip_mreq* ip_mreq, sockaddr_in new_station) {
+    auto station = radio_stations.find(new_station);
+    if (station == radio_stations.end())
+        return;
+    if (cmp_stations(new_station, curr_station))
+        return;
+
+    disconnect_from_station(poll_desc, ip_mreq);
+    connect_to_station(poll_desc, ip_mreq, station->first, station->second.mcast_addr, station->second.data_port, station->second.name);
 }
 
 void handle_message(pollfd* poll_desc, struct ip_mreq* ip_mreq) {
@@ -320,16 +340,9 @@ void transmit_music(int from_ui_fd) {
                 play(buffer);
             }
             if (poll_desc[UI_IN].revents & POLLIN) {
-                char message[100];
-                ssize_t received_bytes = read(poll_desc[UI_IN].fd, message, 100);
-                if (received_bytes == -1)
-                    fatal("Error in read\n");
-                std::cout << message << "\n";
-
-                // DEBUG
-                char* message2 = "message to ui\n";
-                ssize_t b = write(UI_OUT_FD, message2, strlen(message2));
-                std::cout << "Sent " << b << " bytes\n";
+                if (receive_ui_change_msg(poll_desc[UI_IN].fd)) {
+                    switch_to_station(poll_desc, &ip_mreq, change_station);
+                }
             }
         }
 
@@ -345,7 +358,7 @@ void transmit_music(int from_ui_fd) {
 void create_ui_thread(int write_fd, int read_fd) {
     pthread_t thread;
     auto* args = (thread_args*) malloc(sizeof(thread_args));
-    *args = thread_args{UI_PORT, write_fd, read_fd, &radio_stations, &lock, &curr_station};
+    *args = thread_args{UI_PORT, write_fd, read_fd, &radio_stations, &lock, &curr_station, &change_station};
     CHECK_ERRNO(pthread_create(&thread, nullptr, run_ui, args));
     CHECK_ERRNO(pthread_detach(thread));
 }
