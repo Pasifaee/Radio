@@ -1,6 +1,8 @@
 #include <poll.h>
 #include "ui.h"
 
+typedef std::pair<std::string, sockaddr_in> station_print;
+
 #define CENTRAL 0
 #define RECV_IN 1
 
@@ -14,6 +16,23 @@ void clear_screen(pollfd* poll_desc, int client_nr) {
     send_data(poll_desc[client_nr].fd, clear_message, strlen(clear_message) + 1);
 }
 
+std::vector<station_print> sorted_stations(const std::map<sockaddr_in, radio_station>& radio_stations) {
+    auto sorted_stations = std::vector<station_print>();
+    for (auto & radio_station : radio_stations) {
+        sorted_stations.push_back(std::make_pair(radio_station.second.name, radio_station.first));
+    }
+    std::sort(sorted_stations.begin(), sorted_stations.end());
+    return sorted_stations;
+}
+
+int curr_station_nr(std::vector<station_print> sorted_stations, sockaddr_in curr_station) {
+    for (int i = 0; i < (int) sorted_stations.size(); i++) {
+        if (cmp_stations(sorted_stations[i].second, curr_station))
+            return i;
+    }
+    return -1;
+}
+
 void print_interface(pollfd* poll_desc, int client_nr, std::map<sockaddr_in, radio_station>* radio_stations_ptr, pthread_mutex_t* lock_ptr, sockaddr_in* curr_station_ptr) {
     std::string interface;
     interface += "\n";
@@ -21,10 +40,12 @@ void print_interface(pollfd* poll_desc, int client_nr, std::map<sockaddr_in, rad
     interface += " SIK Radio\n\n";
     interface += "------------------------------------------------------------------------\n\n";
     pthread_mutex_lock(lock_ptr);
-    for (auto it = radio_stations_ptr->begin(); it != radio_stations_ptr->end(); it++) {
-        if (cmp_stations(it->first, *curr_station_ptr))
+    auto stations_srtd = sorted_stations(*radio_stations_ptr);
+    int curr_st_nr = curr_station_nr(stations_srtd, *curr_station_ptr);
+    for (int i = 0; i < (int) stations_srtd.size(); i++) {
+        if (i == curr_st_nr)
             interface += " > ";
-        interface += "Radio \"" + it->second.name + "\"\n\n";
+        interface += stations_srtd[i].first + "\n\n";
     }
     pthread_mutex_unlock(lock_ptr);
     interface += "------------------------------------------------------------------------\n";
