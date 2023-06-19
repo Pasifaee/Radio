@@ -137,7 +137,7 @@ void send_ui_update_msg() {
 }
 
 bool receive_ui_change_msg(int from_ui_fd) {
-    char msg[MSG_BUFF_SIZE-1];
+    char msg[MSG_BUFF_SIZE];
     ssize_t received_bytes = read(from_ui_fd, msg, MSG_BUFF_SIZE);
     if (received_bytes == -1)
         fatal("Error in read\n");

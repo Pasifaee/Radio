@@ -66,7 +66,7 @@ void send_change_msg(int write_fd) {
 }
 
 bool receive_update_msg(int read_fd) {
-    char msg[MSG_BUFF_SIZE-1];
+    char msg[MSG_BUFF_SIZE];
     ssize_t received_bytes = read(read_fd, msg, MSG_BUFF_SIZE);
     if (received_bytes == -1)
         fatal("Error in read\n");

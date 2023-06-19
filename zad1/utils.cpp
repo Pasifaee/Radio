@@ -137,7 +137,7 @@ std::string trim(const std::string& s)
 
 bool valid_chars(std::string s) {
     for (auto c : s) {
-        if (c != '\n' && (c < 32 || c > 127))
+        if (c != '\n' && c < 32)
             return false;
     }
     return true;
