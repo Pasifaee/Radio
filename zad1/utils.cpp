@@ -6,19 +6,22 @@ namespace po = boost::program_options;
 
 void get_options(bool sender, const int ac, char* av[], addr_t* address, std::string* name, port_t* ctrl_port, port_t* ui_port, size_t* bsize, port_t* data_port, size_t* psize) {
     std::string ctrl_port_str, ui_port_str, data_port_str;
-    ssize_t bsize_test, psize_test;
+    ssize_t bsize_test, psize_test, fsize_test, rtime_test;
     // Declare the supported options.
     po::options_description desc("Allowed options");
     desc.add_options()
             ("help", "produce help message")
             ("control-port,C", po::value<std::string>(&ctrl_port_str)->default_value(DFLT_CTRL_PORT),
-             "specify port for control protocol");
+             "specify port for control protocol")
+             ("rexmit-time,R", po::value<ssize_t>(&rtime_test)->default_value(DFLT_RTIME),
+                     "specify retransmission time");
     if (sender) {
         desc.add_options()
                 ("multicast-addr,a", po::value<addr_t>(address), "specify multicast IPv4 address")
                 ("audio-port,P", po::value<std::string>(&data_port_str)->default_value(DFLT_DATA_PORT),
                  "specify port for audio transfer")
                 ("package-size,p", po::value<ssize_t>(&psize_test)->default_value(DFLT_PSIZE), "set package size")
+                ("fifo-size,f", po::value<ssize_t>(&fsize_test)->default_value(DFLT_FSIZE), "set FIFO size")
                 ("name,n", po::value<std::string>(name)->default_value(DFLT_NAME), "set the name");
     } else { // Receiver.
         desc.add_options()
@@ -56,6 +59,10 @@ void get_options(bool sender, const int ac, char* av[], addr_t* address, std::st
     else
         *data_port = read_port(data_port_str.c_str());
 
+    if (rtime_test <= 0) {
+        fatal("Retransmission time must be positive.\n");
+    }
+
     if (!sender) {
         if (bsize_test <= 0) {
             fatal("Buffer size must be positive.\n");
@@ -66,6 +73,8 @@ void get_options(bool sender, const int ac, char* av[], addr_t* address, std::st
     if (sender) {
         if (psize_test <= 0) {
             fatal("Package size must be positive.\n");
+        } else if (fsize_test <= 0) {
+            fatal("FIFO size must be positive.\n");
         } else {
             *psize = (size_t) psize_test;
         }
@@ -128,7 +137,7 @@ std::string trim(const std::string& s)
 
 bool valid_chars(std::string s) {
     for (auto c : s) {
-        if (c != '\n' && (c < 32 | c > 127))
+        if (c != '\n' && (c < 32 || c > 127))
             return false;
     }
     return true;

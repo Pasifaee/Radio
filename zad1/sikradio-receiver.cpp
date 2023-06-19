@@ -367,8 +367,8 @@ void create_ui_thread(int write_fd, int read_fd) {
 int main(int argc, char* argv[]) {
     try {
         get_options(false, argc, argv, &DISCOVER_ADDR, &NAME, &CTRL_PORT, &UI_PORT, &BSIZE);
-    } catch (std::exception e) {
-        // std::cerr << e.what() << "\n";
+    } catch (std::exception& e) {
+        std::cerr << e.what() << "\n";
         exit(1);
     }
 

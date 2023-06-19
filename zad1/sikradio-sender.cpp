@@ -109,7 +109,13 @@ std::pair<int, int> init_connection(struct pollfd* poll_desc) {
 }
 
 int main(int argc, char* argv[]) {
-    get_options(true, argc, argv, &MCAST_ADDR, &NAME, &CTRL_PORT, nullptr, nullptr, &DATA_PORT, &PSIZE);
+    try {
+        get_options(true, argc, argv, &MCAST_ADDR, &NAME, &CTRL_PORT, nullptr,
+                    nullptr, &DATA_PORT, &PSIZE);
+    } catch (std::exception& e) {
+        std::cerr << e.what() << "\n";
+        exit(1);
+    }
 
     struct pollfd poll_desc[N_FDS];
     auto sockets = init_connection(poll_desc);

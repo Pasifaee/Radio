@@ -15,7 +15,9 @@
 #define DFLT_CTRL_PORT "37924"
 #define DFLT_UI_PORT "17924"
 #define DFLT_PSIZE 512
+#define DFLT_FSIZE 131072
 #define DFLT_BSIZE 65536
+#define DFLT_RTIME 250
 #define DFLT_NAME "Nienazwany nadajnik"
 
 // Constants.

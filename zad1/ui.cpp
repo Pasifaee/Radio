@@ -169,7 +169,7 @@ void* run_ui(void* args_ptr) {
             for (int i = 2; i < MAX_CONNS; ++i) {
                 if (poll_desc[i].fd != -1 && (poll_desc[i].revents & (POLLIN | POLLERR))) {
                     char key[3];
-                    ssize_t received_bytes = read(poll_desc[i].fd, key, sizeof (char) * 5);
+                    ssize_t received_bytes = read(poll_desc[i].fd, key, sizeof (char) * 3);
                     if (received_bytes < 0) {
                         CHECK_ERRNO(close(poll_desc[i].fd));
                         poll_desc[i].fd = -1;
